@@ -1,18 +1,26 @@
 [project]
 name = "familyphotoapp"
 version = "0.1.0"
-description = ""
+description = "Desktop приложение для работы с симейным архивом."
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    { name = "Григорий Т.", email = "you@example.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.13, <4.0"
+requires-python = "=3.12.11"
 dependencies = [
-    "ruff (>=0.12.3,<0.13.0)"
+    "dearpygui (>=2.1.0,<3.0.0)",
+    "screeninfo (>=0.8.1,<0.9.0)",
 ]
 
 [tool.poetry]
-packages = [{include = "familyphotoapp", from = "src"}]
+packages = [{ include = "familyphotoapp", from = "src" }]
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.12.3"
+psutil = "^7.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
