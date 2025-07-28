@@ -1,4 +1,5 @@
 import time
+from enum import IntEnum
 from pathlib import Path
 
 import dearpygui.dearpygui as dpg
@@ -8,6 +9,13 @@ from screeninfo import get_monitors, Monitor, ScreenInfoError
 from src import WinConstEnum, AppConstEnum
 
 CURRENT_PATH = Path(__file__)
+
+
+class MouseActionCallbackEnum(IntEnum):
+    moving = 1
+    click = 2
+    release = 3
+    drag = 4
 
 
 class App:
@@ -21,7 +29,10 @@ class App:
     PRIMARY_WINDOW: str | int = None
     TARGET_FPS: int = AppConstEnum.START_FPS.value
     APP_ELEMENT_LABELS: dict[str, int | str] = {}  # `Tag` элемента по его `label`.
-    RESIZE_ITEM_CALLBACKS: dict[str, callable] = {}
+    _RESIZE_ITEM_CALLBACKS: dict[str, callable] = {}
+    _MOUSE_CALLBACKS: dict[str, dict[str, callable]] = {
+        action.name: {} for action in MouseActionCallbackEnum
+    }
 
     def __new__(cls):
         if cls._instance is None:
@@ -33,7 +44,9 @@ class App:
         if not self._initialized:
             self.__create_viewport()
             self.__configurate_global_themes()
-            dpg.set_viewport_resize_callback(self.__run_item_callbacks)
+            self.__create_handle_mouse_registry()
+
+            dpg.set_viewport_resize_callback(self.force_all_resize_callbacks)
             self._initialized = False
 
     @staticmethod
@@ -58,6 +71,27 @@ class App:
                 dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
             dpg.bind_font(dg_font)
 
+    def __create_handle_mouse_registry(self):
+        def run_callback_by_mouse_type(callback_type: MouseActionCallbackEnum) -> None:
+            for callback in self._MOUSE_CALLBACKS[callback_type.name].values():
+                callback()
+
+        with dpg.handler_registry():
+            dpg.add_mouse_move_handler(callback=lambda: run_callback_by_mouse_type(MouseActionCallbackEnum.moving))
+            dpg.add_mouse_click_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=lambda: run_callback_by_mouse_type(MouseActionCallbackEnum.click),
+            )
+            dpg.add_mouse_release_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=lambda: run_callback_by_mouse_type(MouseActionCallbackEnum.release),
+            )
+            dpg.add_mouse_drag_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=lambda: run_callback_by_mouse_type(MouseActionCallbackEnum.drag),
+                threshold=1,
+            )
+
     def __create_viewport(self) -> None:
         monitor_params = self.get_monitor_params(only_prime=True)[0]
 
@@ -76,9 +110,50 @@ class App:
             min_height=WinConstEnum.MIN_HEIGHT.value,
         )
 
-    def __run_item_callbacks(self):
-        for name, callback in self.RESIZE_ITEM_CALLBACKS.items():
-            print(f"INFO >>> Run <{name}> callback")
+    def insert_mouse_moving_callback(
+            self,
+            name: str,
+            callback: callable,
+            callback_type: MouseActionCallbackEnum
+    ) -> None:
+        mouse_callback = self._MOUSE_CALLBACKS[callback_type.name]
+        mouse_callback[name] = callback
+
+    def insert_item_resize_callback(self, callback_name: str, new_callback: callable, force_run: bool = False) -> None:
+        if callback_name in self._RESIZE_ITEM_CALLBACKS:
+            raise ValueError(f"Callback c именем <{callback_name}> уже существует!")
+
+        self._RESIZE_ITEM_CALLBACKS[callback_name] = new_callback
+        if force_run:
+            new_callback()
+
+    def delete_item_resize_callback(self, callback_tag: str) -> None:
+        if callback_tag not in self._RESIZE_ITEM_CALLBACKS:
+            return
+        del self._RESIZE_ITEM_CALLBACKS[callback_tag]
+
+    def run_resize_callback_by_name(self, name: str, math: bool = False, count_match: int = 1):
+        if not math:
+            if name not in self._RESIZE_ITEM_CALLBACKS:
+                raise KeyError(f"Callback c именем <{name}> не зарегистрирован!")
+            self._RESIZE_ITEM_CALLBACKS[name]()
+            return
+
+        if count_match == 0:
+            count_match = 1
+        if count_match < 0:
+            count_match = len(self._RESIZE_ITEM_CALLBACKS)
+
+        for callback_name, callback in self._RESIZE_ITEM_CALLBACKS.items():
+            if name in callback_name:
+                callback()
+                count_match -= 1
+            if not count_match:
+                return
+
+    def force_all_resize_callbacks(self) -> None:
+        for name, callback in self._RESIZE_ITEM_CALLBACKS.items():
+            print(f"INFO >>> Run resize callback <{name}>")
             callback()
         print("-" * 120)
 
@@ -106,21 +181,20 @@ class App:
         last_fps_update = time.perf_counter()
         fps_counter: int = 0
 
-        while dpg.is_dearpygui_running():  # Основной цикл рендеринга
+        while dpg.is_dearpygui_running():
             frame_time = 1.0 / self.TARGET_FPS if self.TARGET_FPS else 0
             start_time = time.perf_counter()
             fps_counter += 1
             current_time = time.perf_counter()
             if current_time - last_fps_update >= 1.0:
-                if dpg.does_item_exist("app_fps_tag"):
-                    dpg.set_value("app_fps_tag", f"FPS:{fps_counter}")
-                    dpg.set_value("cpu_data_tag", f"CPU:{ps.cpu_percent()}%")
+                dpg.set_value("app_fps_tag", f"FPS:{fps_counter}")
+                dpg.set_value("cpu_data_tag", f"CPU:{ps.cpu_percent()}%")
                 fps_counter = 0
                 last_fps_update = current_time
 
-            dpg.render_dearpygui_frame()  # Рендер кадра
+            dpg.render_dearpygui_frame()
 
-            elapsed = time.perf_counter() - start_time  # Ограничение FPS
+            elapsed = time.perf_counter() - start_time
 
             if elapsed < frame_time:
                 time.sleep(frame_time - elapsed)  # Задержка для выравнивания FPS

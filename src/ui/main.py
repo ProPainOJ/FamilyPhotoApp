@@ -1,29 +1,226 @@
 import math
+from typing import Optional, TypeVar
 
 import dearpygui.dearpygui as dpg
 from dearpygui.dearpygui import get_value
 
 from src import App, WinConstEnum as WCE
-from src.ui import MainApp
+from src.core.base import MouseActionCallbackEnum
+from src.ui import MainAppElement
+
+POSITION = TypeVar('POSITION', int, float)
+ElementName = TypeVar('ElementName', str, int)
+
+Point = tuple[POSITION, POSITION]
 
 
-class MainWindow(MainApp):
+class MainWindowEventHandler:
+    @classmethod
+    def on_mouse_move_callback(cls, _instance) -> None:
+        if dpg.get_item_configuration(_instance.sidebar_left_tag)["show"]:
+            app_el_type = dpg.get_item_info(dpg.get_active_window())["type"]
+            if "mvMenu" not in app_el_type and InnerLineSeparation.is_mouse_near_line(
+                    mouse_pos=dpg.get_mouse_pos(),
+                    line_p1=_instance.new_line.point1,
+                    line_p2=_instance.new_line.point2,
+                    threshold=_instance.new_line.thickness // 2,
+            ):
+                _instance.new_line.hovered = True
+                _instance.new_line.configurate_line({"show": True})
+            else:
+                _instance.new_line.hovered = False
+                _instance.new_line.configurate_line({"show": False})
+
+    @classmethod
+    def on_mouse_click_callback(cls, _instance):
+        if _instance.new_line.hovered:
+            _instance.new_line.dragging = True
+
+    @classmethod
+    def on_mouse_release_callback(cls, _instance):
+        if _instance.new_line.dragging:
+            _instance.new_line.dragging = False
+            _instance.new_line.configurate_line(
+                {
+                    "color": _instance.new_line.color,
+                    "thickness": _instance.new_line.thickness,
+                }
+            )
+
+    @classmethod
+    def on_mouse_drag_callback(cls, _instance) -> None:
+        mouse_x_position_by_dragging = dpg.get_mouse_pos()[0]
+        if _instance.new_line.dragging:
+            accept_side_bar_width = dpg.get_viewport_width() // 3
+            if mouse_x_position_by_dragging < WCE.SIDE_BAR_WIDTH.value:
+                mouse_x_position_by_dragging = WCE.SIDE_BAR_WIDTH.value
+                p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
+                p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
+            elif mouse_x_position_by_dragging >= accept_side_bar_width:
+                mouse_x_position_by_dragging = accept_side_bar_width
+
+                p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
+                p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
+            else:
+                p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
+                p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
+
+            _instance.new_line.configurate_line(
+                {
+                    "p1": p1,
+                    "p2": p2,
+                    "color": (155, 0, 0, 255),
+                    "thickness": _instance.new_line.thickness + _instance.new_line.thickness // 2,
+                }
+            )
+            _instance.new_line.point1 = p1
+            _instance.new_line.point2 = p2
+
+            _instance.SIDEBAR_WIDTH = mouse_x_position_by_dragging
+            _instance.app.run_resize_callback_by_name(name="sidebar", math=True)
+        else:
+            _instance.new_line.dragging = False
+
+    @classmethod
+    def resize_transfer_line_callback(cls, _instance) -> None:
+        _instance.new_line.hovered = _instance.new_line.dragging = False
+        p2 = (_instance.new_line.point2[0], dpg.get_viewport_height() - _instance.FOOTER_HEIGHT)
+        _instance.new_line.point2 = p2
+        _instance.new_line.configurate_line({"p2": p2})
+
+    @classmethod
+    def resize_footer_callback(cls, _instance) -> None:
+        dpg.configure_item(_instance.footer_tag, width=dpg.get_viewport_width())
+        dpg.set_item_pos(_instance.footer_tag, [0, dpg.get_viewport_height() - _instance.FOOTER_HEIGHT])
+
+    @classmethod
+    def resize_sidebar_callback(cls, _instance) -> None:
+        dpg.configure_item(
+            _instance.sidebar_left_tag,
+            width=_instance.SIDEBAR_WIDTH,
+            height=dpg.get_viewport_height() - (_instance.FOOTER_HEIGHT + _instance.UPPER_HEIGHT),
+        )
+
+    @classmethod
+    def hide_footer_callback(cls, _instance) -> None:
+        _instance.FOOTER_HEIGHT = WCE.FOOTER_HEIGHT.value if not _instance.FOOTER_HEIGHT else 0
+
+        dpg.configure_item(
+            _instance.footer_tag,
+            show=not dpg.get_item_configuration(_instance.footer_tag)["show"],
+        )
+
+        _instance.app.force_all_resize_callbacks()
+
+
+class InnerLineSeparation:
+    def __init__(
+            self,
+            label: str,
+            point1: Point,
+            point2: Point,
+            color: tuple[float | int, ...] = None,
+            thickness: float | int = 1,
+            parent: Optional[ElementName] = None,
+            extra_configuration: Optional[dict] = None,
+    ) -> None:
+
+        self.hovered: bool = False
+        self.dragging: bool = False
+
+        self.color = color
+        self.parent: Optional[ElementName] = parent
+        self.extra_configuration: Optional[dict] = extra_configuration
+
+        self.label = label
+        self.tag = self.label + "_tag"
+        self.point1 = point1
+        self.point2 = point2
+        self.thickness = thickness
+
+    def __repr__(self) -> str:
+        return (
+            f"Line - <{self.tag}> "
+            f"<Points: <{self.point1}-{self.point2}> "
+            f"Length: {self.count_line_length(self.point1, self.point2)}>"
+        )
+
+    @staticmethod
+    def count_line_length(point1: Point, point2: Point) -> float:
+        return math.hypot(point2[0] - point1[0], point2[1] - point1[1])
+
+    @staticmethod
+    def is_mouse_near_line(
+            mouse_pos: tuple[float | int, ...] | list[float | int, float | int],
+            line_p1: tuple[float | int, ...],
+            line_p2: tuple[float | int, ...],
+            threshold: float | int = 1
+    ) -> bool:
+        """Рядом ли мышь с линией.
+
+        :param mouse_pos: Позиция мыши по x, y.
+        :param line_p1: Точка страта линии.
+        :param line_p2: Точка завершения линии.
+        :param threshold: Расстояние в px до линии.
+        :return: Bool
+        """
+
+        x, y = mouse_pos
+        x1, y1 = line_p1
+        x2, y2 = line_p2
+
+        # Рассчитываем расстояние от точки до линии
+        line_length = math.hypot(x2 - x1, y2 - y1)
+        if line_length == 0:
+            return False
+
+        # Нормализованный проекционный вектор
+        vector = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / (line_length ** 2)
+
+        # Ближайшая точка на линии
+        if vector < 0:
+            closest = (x1, y1)
+        elif vector > 1:
+            closest = (x2, y2)
+        else:
+            closest = (x1 + vector * (x2 - x1), y1 + vector * (y2 - y1))
+
+        distance = math.hypot(x - closest[0], y - closest[1])
+
+        return distance <= threshold
+
+    def configurate_line(self, configuration: dict) -> None:
+        dpg.configure_item(item=self.tag, **configuration)
+
+    def draw_line(self) -> ElementName:
+        dpg.draw_line(
+            tag=self.label + "_tag",
+            label=self.label,
+            p1=self.point1,
+            p2=self.point2,
+            thickness=self.thickness,
+        )
+
+        if self.parent:
+            self.configurate_line({"parent": self.parent})
+        if self.color:
+            self.configurate_line({"color": self.color})
+        if self.extra_configuration:
+            self.configurate_line(self.extra_configuration)
+
+        return self.tag
+
+
+class MainWindow(MainAppElement, MainWindowEventHandler):
     WINDOW_ELEMENTS: set[str] = {
         "footer",
         "upper",
         "sidebar_left",
+        "line",
     }
     FOOTER_HEIGHT: int = None
     UPPER_HEIGHT: int = None
-    SIDEBAR_WIDTH = 121
-    SIDEBAR_LINE_STATE = {
-        "hovered": False,
-        "dragging": False,
-        "color": (125, 0, 255, 255 // 3),
-        "width": SIDEBAR_WIDTH,
-        "mouse_start": [],
-        "mouse_end": [],
-    }
+    SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value
 
     def __init__(self, main_app: App) -> None:
         """Реализация основных элементов-контейнеров приложения.
@@ -35,14 +232,19 @@ class MainWindow(MainApp):
             `self.__name__`+`_sidebar`
         """
         self.app = main_app
-        self.window_name = self.__class__.__name__
+
+        self.WINDOW_NAME = self.__class__.__name__
+        self.footer_tag = self.WINDOW_NAME + "_" + "footer_tag"
+        self.upper_tag = self.WINDOW_NAME + "_" + "upper_tag"
+        self.sidebar_left_tag = self.WINDOW_NAME + "_" + "sidebar_left_tag"
+        self.line_tag = self.WINDOW_NAME + "_" + "line_tag"
 
         self.FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
         self.main_window = self.create_main_window()
 
-        self.app.APP_ELEMENT_LABELS[self.window_name] = self.main_window
-        self.app.APP_ELEMENT_LABELS[self.window_name + '_upper'] = self._create_upper()
-        self.app.APP_ELEMENT_LABELS[self.window_name + '_footer'] = self._create_footer()
+        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME] = self.main_window
+        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME + '_upper'] = self._create_upper()
+        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME + '_footer'] = self._create_footer()
 
         self._create_sidebar()
         self._create_setting_window()
@@ -86,152 +288,46 @@ class MainWindow(MainApp):
 
         dpg.bind_item_theme(self.app.APP_ELEMENT_LABELS[self.__class__.__name__ + "_footer"], main_footer_theme_tag)
 
-    def __hide_footer_callback(self) -> None:
-        footer = self.app.APP_ELEMENT_LABELS[self.__class__.__name__ + "_footer"]
-
-        self.FOOTER_HEIGHT = WCE.FOOTER_HEIGHT.value if not self.FOOTER_HEIGHT else 0
-
-        dpg.configure_item(footer, show=not dpg.get_item_configuration(footer)["show"])
-
-        [callback() for name, callback in self.app.RESIZE_ITEM_CALLBACKS.items()]
-
-    def __create_transfer_line(self) -> int | str:
-        def resize_transfer_line_callback() -> None:
-            self.SIDEBAR_LINE_STATE["hovered"] = False
-            self.SIDEBAR_LINE_STATE["dragging"] = False
-            line_config = dpg.get_item_configuration(line)["p2"]
-            dpg.configure_item(item=line, p2=(line_config[0], dpg.get_viewport_height() - self.FOOTER_HEIGHT))
-
-        def is_mouse_near_line(
-                mouse_pos: tuple[float | int, ...] | list[float | int, float | int],
-                line_p1: tuple[float | int, ...],
-                line_p2: tuple[float | int, ...],
-                threshold: float | int = 1
-        ) -> bool:
-            """Рядом ли мышь с линией.
-
-            :param mouse_pos: Позиция мыши по x, y.
-            :param line_p1: Точка страта линии.
-            :param line_p2: Точка завершения линии.
-            :param threshold: Расстояние в px до линии.
-            :return: Bool
-            """
-
-            x, y = mouse_pos
-            x1, y1 = line_p1
-            x2, y2 = line_p2
-
-            # Рассчитываем расстояние от точки до линии
-            line_length = math.hypot(x2 - x1, y2 - y1)
-            if line_length == 0:
-                return False
-
-            # Нормализованный проекционный вектор
-            vector = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / (line_length ** 2)
-
-            # Ближайшая точка на линии
-            if vector < 0:
-                closest = (x1, y1)
-            elif vector > 1:
-                closest = (x2, y2)
-            else:
-                closest = (x1 + vector * (x2 - x1), y1 + vector * (y2 - y1))
-
-            distance = math.hypot(x - closest[0], y - closest[1])
-
-            return distance <= threshold
-
-        def on_mouse_drag_callback(sender, app_data, user_data) -> None:
-            is_near_line_by_dragging = is_mouse_near_line(
-                dpg.get_mouse_pos(),
-                line_p1=dpg.get_item_configuration(line)["p1"],
-                line_p2=dpg.get_item_configuration(line)["p2"],
-                threshold=dpg.get_viewport_width() // 2
-            )
-            if self.SIDEBAR_LINE_STATE["dragging"] and is_near_line_by_dragging:
-                mouse_position_by_dragging = dpg.get_mouse_pos()
-                line_config = dpg.get_item_configuration(line)
-                p1 = (mouse_position_by_dragging[0], line_config["p1"][1])
-                p2 = (mouse_position_by_dragging[0], line_config["p2"][1])
-
-                dpg.configure_item(
-                    item=line,
-                    p1=p1,
-                    p2=p2,
-                    color=(155, 0, 0, 255),
-                    thickness=1,
-                )
-                self.SIDEBAR_WIDTH = mouse_position_by_dragging[0]
-                self.app.RESIZE_ITEM_CALLBACKS[self.app.APP_ELEMENT_LABELS[self.window_name + "_sidebar_left"]]()
-
-        def on_mouse_release_callback(sender, app_data, user_data):
-            self.SIDEBAR_LINE_STATE["dragging"] = False
-            if self.SIDEBAR_LINE_STATE["hovered"]:
-                dpg.configure_item(
-                    item=line,
-                    color=(155, 0, 255, 255),
-                )
-                self.SIDEBAR_LINE_STATE["hovered"] = False
-            else:
-                dpg.configure_item(
-                    item=line,
-                    show=False,
-                )
-
-        def on_mouse_click_callback(sender, app_data, user_data):
-            if self.SIDEBAR_LINE_STATE["hovered"]:
-                self.SIDEBAR_LINE_STATE["dragging"] = True
-
-                self.SIDEBAR_LINE_STATE["mouse_start"] = dpg.get_mouse_pos()
-
-                dpg.configure_item(
-                    item=line,
-                    color=(255, 0, 0, 255),
-                )
-
-        def on_mouse_move_callback(sender, app_data, user_data):
-            sidebar = self.app.APP_ELEMENT_LABELS[self.window_name + "_sidebar_left"]
-            if dpg.get_item_configuration(sidebar)["show"]:
-                if is_mouse_near_line(
-                        app_data,
-                        dpg.get_item_configuration(line)["p1"],
-                        dpg.get_item_configuration(line)["p2"],
-                        3,
-                ):
-                    self.SIDEBAR_LINE_STATE["hovered"] = True
-                    dpg.configure_item(
-                        item=line,
-                        show=True,
-                    )
-                else:
-                    dpg.configure_item(
-                        item=line,
-                        show=False,
-                    )
-
-        # Creating viewport drawlists.
+    def __create_transfer_line(self) -> Optional[ElementName]:
         with dpg.viewport_drawlist() as viewport_drawlist:
-            line_position = (
+            start_line_position: tuple[Point, Point] = (
                 (self.SIDEBAR_WIDTH, self.UPPER_HEIGHT),
                 (self.SIDEBAR_WIDTH, dpg.get_viewport_height() - self.FOOTER_HEIGHT),
             )
-            line = dpg.draw_line(
-                tag="line",
-                p1=line_position[0],
-                p2=line_position[1],
-                color=self.SIDEBAR_LINE_STATE["color"],
-                thickness=3,
+            self.new_line = InnerLineSeparation(
+                label=self.line_tag.strip("_" + self.app.TAG),
+                point1=start_line_position[0],
+                point2=start_line_position[1],
+                parent=viewport_drawlist,
+                thickness=2,
+                color=(252, 199, 249),
             )
+            self.line_tag = self.new_line.draw_line()
 
-        with dpg.handler_registry():
-            dpg.add_mouse_move_handler(callback=on_mouse_move_callback)
-            dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Left, callback=on_mouse_click_callback)
-            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=on_mouse_release_callback)
-            dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left, callback=on_mouse_drag_callback)
+        self.app.insert_mouse_moving_callback(
+            name=self.line_tag,
+            callback=lambda: self.on_mouse_move_callback(self),
+            callback_type=MouseActionCallbackEnum.moving,
+        )
+        self.app.insert_mouse_moving_callback(
+            name=self.line_tag,
+            callback=lambda: self.on_mouse_click_callback(self),
+            callback_type=MouseActionCallbackEnum.click,
+        )
+        self.app.insert_mouse_moving_callback(
+            name=self.line_tag,
+            callback=lambda: self.on_mouse_release_callback(self),
+            callback_type=MouseActionCallbackEnum.release,
+        )
+        self.app.insert_mouse_moving_callback(
+            name=self.line_tag,
+            callback=lambda: self.on_mouse_drag_callback(self),
+            callback_type=MouseActionCallbackEnum.drag,
+        )
 
-        self.app.RESIZE_ITEM_CALLBACKS[line] = resize_transfer_line_callback
+        self.app.insert_item_resize_callback(self.line_tag, lambda: self.resize_transfer_line_callback(self))
 
-        return line
+        return
 
     def _create_setting_window(self) -> None:
         """Реализация окна с настройками приложения."""
@@ -270,18 +366,20 @@ class MainWindow(MainApp):
         """Создание верхнего меню приложения."""
         _upper_name: str = "upper"
         with dpg.menu_bar(
-                tag="_".join((self.window_name, _upper_name, self.app.TAG)),
+                tag="_".join((self.WINDOW_NAME, _upper_name, self.app.TAG)),
                 label=_upper_name,
                 parent=self.main_window,
         ) as upper_menu:
             with dpg.menu(label="Меню"):
                 dpg.add_menu_item(
+                    label="Панель метрик",
+                    callback=lambda: self.hide_footer_callback(self),
+                )
+                dpg.add_menu_item(
                     label="Боковая панель",
                     callback=lambda: dpg.configure_item(
-                        self.app.APP_ELEMENT_LABELS[self.window_name + "_sidebar_left"],
-                        show=not dpg.get_item_configuration(
-                            self.app.APP_ELEMENT_LABELS[self.window_name + "_sidebar_left"]
-                        )["show"],
+                        self.sidebar_left_tag,
+                        show=not dpg.get_item_configuration(self.sidebar_left_tag)["show"],
                     )
                 )
                 dpg.add_menu_item(
@@ -290,10 +388,6 @@ class MainWindow(MainApp):
                 )
 
             with dpg.menu(label="Настройки"):
-                dpg.add_menu_item(
-                    label="hide footer",
-                    callback=self.__hide_footer_callback,
-                )
                 dpg.add_menu_item(
                     label="FPS",
                     callback=lambda: dpg.configure_item("setting_tag", show=True)
@@ -324,17 +418,12 @@ class MainWindow(MainApp):
 
         return upper_menu
 
-    def _create_footer(self) -> str | int:
+    def _create_footer(self) -> ElementName:
         """Создание нижнего меню состояния приложения."""
-        _footer_name: str = self.window_name + "_footer"
-
-        def resize_footer_callback() -> None:
-            dpg.configure_item(main_footer_tag, width=dpg.get_viewport_width())
-            dpg.set_item_pos(main_footer_tag, [0, dpg.get_viewport_height() - self.FOOTER_HEIGHT])
 
         with dpg.child_window(
-                tag="_".join((_footer_name, self.app.TAG)),
-                label=_footer_name,
+                tag=self.footer_tag,
+                label=self.footer_tag.rstrip("_" + self.app.TAG),
                 height=self.FOOTER_HEIGHT,
                 width=dpg.get_viewport_width(),
                 pos=(0, dpg.get_viewport_height() - self.FOOTER_HEIGHT),
@@ -342,12 +431,12 @@ class MainWindow(MainApp):
                 autosize_x=True,
                 autosize_y=True,
                 show=WCE.SHOW_FOOTER.value,
-        ) as main_footer_tag:
+        ):
             with dpg.group(
                     tag="footer_group_tag",
                     height=self.FOOTER_HEIGHT,
                     horizontal=True,
-                    parent=main_footer_tag,
+                    parent=self.footer_tag,
             ) as footer_group:
                 with dpg.theme() as main_footer_group_theme_tag:
                     with dpg.theme_component(dpg.mvGroup):
@@ -358,35 +447,16 @@ class MainWindow(MainApp):
                 dpg.add_text(tag="app_fps_tag", default_value="FPS:---")
                 dpg.add_text(tag="cpu_data_tag", default_value="CPU:---")
 
-        self.app.APP_ELEMENT_LABELS[_footer_name] = main_footer_tag
-        self.app.RESIZE_ITEM_CALLBACKS[main_footer_tag] = resize_footer_callback
+        self.app.insert_item_resize_callback(self.footer_tag, lambda: self.resize_footer_callback(self))
 
-        return main_footer_tag
+        return self.footer_tag
 
-    def _create_sidebar(self) -> str | int:
+    def _create_sidebar(self) -> ElementName:
         """Создание бокового окна приложения."""
 
-        _side_bar_name = self.window_name + "_sidebar_left"
-
-        def move_sidebar_callback(sender, app_data, user_data):
-            window_tag, new_width, new_height = user_data
-            if dpg.get_item_pos(window_tag)[0] + self.SIDEBAR_WIDTH + new_width >= dpg.get_viewport_width():
-                dpg.configure_item(window_tag, pos=(0, 0))
-            else:
-                dpg.configure_item(window_tag, pos=(
-                    dpg.get_item_pos(window_tag)[0] + new_width, new_height + self.UPPER_HEIGHT))
-
-        def resize_sidebar_callback() -> None:
-            dpg.configure_item(
-                sidebar_tag,
-                width=self.SIDEBAR_WIDTH,
-                height=dpg.get_viewport_height() - (self.FOOTER_HEIGHT + self.UPPER_HEIGHT),
-            )
-            self.SIDEBAR_LINE_STATE["hovered"] = False
-
         with dpg.child_window(
-                tag="_".join((_side_bar_name, self.app.TAG)),
-                label=_side_bar_name,
+                tag=self.sidebar_left_tag,
+                label=self.sidebar_left_tag.rstrip("_" + self.app.TAG),
                 parent=self.main_window,
                 pos=(0, self.UPPER_HEIGHT),
                 width=self.SIDEBAR_WIDTH,
@@ -398,14 +468,8 @@ class MainWindow(MainApp):
                 with dpg.collapsing_header(label="Настройки"):
                     dpg.add_checkbox(label="Опция 1")
                     dpg.add_checkbox(label="Опция 2")
-                    dpg.add_button(
-                        label=f"Сдвиг {_side_bar_name}",
-                        callback=move_sidebar_callback,
-                        user_data=(sidebar_tag, 20, 5),
-                    )
 
-        self.app.APP_ELEMENT_LABELS[_side_bar_name] = sidebar_tag
-        self.app.RESIZE_ITEM_CALLBACKS[sidebar_tag] = resize_sidebar_callback
+        self.app.insert_item_resize_callback(sidebar_tag, lambda: self.resize_sidebar_callback(self))
 
         self.__create_transfer_line()
 
