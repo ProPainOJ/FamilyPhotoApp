@@ -28,11 +28,8 @@ class App:
     TAG: str = "tag"
     PRIMARY_WINDOW: str | int = None
     TARGET_FPS: int = AppConstEnum.START_FPS.value
-    APP_ELEMENT_LABELS: dict[str, int | str] = {}  # `Tag` элемента по его `label`.
     _RESIZE_ITEM_CALLBACKS: dict[str, callable] = {}
-    _MOUSE_CALLBACKS: dict[str, dict[str, callable]] = {
-        action.name: {} for action in MouseActionCallbackEnum
-    }
+    _MOUSE_CALLBACKS: dict[str, dict[str, callable]] = {action.name: {} for action in MouseActionCallbackEnum}
 
     def __new__(cls):
         if cls._instance is None:
@@ -53,13 +50,14 @@ class App:
     def __configurate_global_themes() -> None:
         """Применение глобальных настроек приложения."""
 
-        # Фон.
+        # Фон/Style.
         with dpg.theme() as global_theme:
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (25, 25, 55))  # Тёмно-синий фон
                 dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 0)
                 dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 5)
                 dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 0)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 0)
             dpg.bind_theme(global_theme)
 
         # Шрифт.

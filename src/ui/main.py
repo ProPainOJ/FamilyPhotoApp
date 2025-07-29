@@ -20,7 +20,7 @@ class MainWindowEventHandler:
         if dpg.get_item_configuration(_instance.sidebar_left_tag)["show"]:
             app_el_type = dpg.get_item_info(dpg.get_active_window())["type"]
             if "mvMenu" not in app_el_type and InnerLineSeparation.is_mouse_near_line(
-                    mouse_pos=dpg.get_mouse_pos(),
+                    mouse_pos=dpg.get_mouse_pos(local=False),
                     line_p1=_instance.new_line.point1,
                     line_p2=_instance.new_line.point2,
                     threshold=_instance.new_line.thickness // 2,
@@ -49,7 +49,7 @@ class MainWindowEventHandler:
 
     @classmethod
     def on_mouse_drag_callback(cls, _instance) -> None:
-        mouse_x_position_by_dragging = dpg.get_mouse_pos()[0]
+        mouse_x_position_by_dragging = dpg.get_mouse_pos(local=False)[0]
         if _instance.new_line.dragging:
             accept_side_bar_width = dpg.get_viewport_width() // 3
             if mouse_x_position_by_dragging < WCE.SIDE_BAR_WIDTH.value:
@@ -78,6 +78,7 @@ class MainWindowEventHandler:
 
             _instance.SIDEBAR_WIDTH = mouse_x_position_by_dragging
             _instance.app.run_resize_callback_by_name(name="sidebar", math=True)
+            _instance.app.run_resize_callback_by_name(name=_instance.container, math=False)
         else:
             _instance.new_line.dragging = False
 
@@ -102,12 +103,37 @@ class MainWindowEventHandler:
         )
 
     @classmethod
+    def resize_container_callback(cls, _instance) -> None:
+        dpg.configure_item(
+            _instance.container,
+            pos=(_instance.SIDEBAR_WIDTH, _instance.UPPER_HEIGHT),
+            height=dpg.get_viewport_height() - (_instance.FOOTER_HEIGHT + _instance.UPPER_HEIGHT),
+        )
+
+    @classmethod
     def hide_footer_callback(cls, _instance) -> None:
         _instance.FOOTER_HEIGHT = WCE.FOOTER_HEIGHT.value if not _instance.FOOTER_HEIGHT else 0
 
         dpg.configure_item(
             _instance.footer_tag,
             show=not dpg.get_item_configuration(_instance.footer_tag)["show"],
+        )
+
+        _instance.app.force_all_resize_callbacks()
+
+    @classmethod
+    def hide_sidebar_callback(cls, _instance) -> None:
+        _instance.SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value if not _instance.SIDEBAR_WIDTH else 0
+
+        p1 = (_instance.SIDEBAR_WIDTH, _instance.new_line.point1[1])
+        p2 = (_instance.SIDEBAR_WIDTH, _instance.new_line.point2[1])
+        _instance.new_line.configurate_line({"p1": p1, "p2": p2})
+        _instance.new_line.point1 = p1
+        _instance.new_line.point2 = p2
+
+        dpg.configure_item(
+            _instance.sidebar_left_tag,
+            show=not dpg.get_item_configuration(_instance.sidebar_left_tag)["show"],
         )
 
         _instance.app.force_all_resize_callbacks()
@@ -218,19 +244,12 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
         "sidebar_left",
         "line",
     }
-    FOOTER_HEIGHT: int = None
+    FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
     UPPER_HEIGHT: int = None
     SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value
 
     def __init__(self, main_app: App) -> None:
-        """Реализация основных элементов-контейнеров приложения.
-
-        Доступные элементы APP_ELEMENT_LABELS:
-            `self.__name__`
-            `self.__name__`+`_footer
-            `self.__name__`+`_upper`
-            `self.__name__`+`_sidebar`
-        """
+        """Реализация основных элементов-контейнеров приложения."""
         self.app = main_app
 
         self.WINDOW_NAME = self.__class__.__name__
@@ -238,22 +257,21 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
         self.upper_tag = self.WINDOW_NAME + "_" + "upper_tag"
         self.sidebar_left_tag = self.WINDOW_NAME + "_" + "sidebar_left_tag"
         self.line_tag = self.WINDOW_NAME + "_" + "line_tag"
+        self.container = self.WINDOW_NAME + "_" + "container_tag"
 
-        self.FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
         self.main_window = self.create_main_window()
+        self.create_upper()
+        self.create_footer()
+        self.create_sidebar()
+        self.create_main_container()
 
-        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME] = self.main_window
-        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME + '_upper'] = self._create_upper()
-        self.app.APP_ELEMENT_LABELS[self.WINDOW_NAME + '_footer'] = self._create_footer()
-
-        self._create_sidebar()
         self._create_setting_window()
-        self.__create_modal_win()
+        self._create_modal_win()
 
         self.__bind_main_window_themes()
 
     @staticmethod
-    def __create_modal_win():  # TODO: Не работает, необходимо переделать под модальное окно настроек.
+    def _create_modal_win():
         with dpg.window(
                 tag="modal_window_tag",
                 label="Delete Files",
@@ -278,7 +296,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
             with dpg.theme_component(dpg.mvMenu):
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 5, 5, category=dpg.mvThemeCat_Core)
 
-        dpg.bind_item_theme(self.app.APP_ELEMENT_LABELS[self.__class__.__name__], main_tag)
+        dpg.bind_item_theme(self.main_window, main_tag)
 
         with dpg.theme() as main_footer_theme_tag:
             with dpg.theme_component(dpg.mvAll):
@@ -286,9 +304,15 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
             with dpg.theme_component(dpg.mvPlatform_Windows):
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
 
-        dpg.bind_item_theme(self.app.APP_ELEMENT_LABELS[self.__class__.__name__ + "_footer"], main_footer_theme_tag)
+        dpg.bind_item_theme(self.footer_tag, main_footer_theme_tag)
 
-    def __create_transfer_line(self) -> Optional[ElementName]:
+        with dpg.theme() as main_container_theme_tag:
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (125, 0, 12, 135), category=dpg.mvThemeCat_Core)
+
+        dpg.bind_item_theme(self.container, main_container_theme_tag)
+
+    def _create_transfer_line(self) -> Optional[ElementName]:
         with dpg.viewport_drawlist() as viewport_drawlist:
             start_line_position: tuple[Point, Point] = (
                 (self.SIDEBAR_WIDTH, self.UPPER_HEIGHT),
@@ -362,7 +386,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
                 callback=lambda: self.app.update_app_fps(get_value("slider_fps_tag")),
             )
 
-    def _create_upper(self) -> str | int:
+    def create_upper(self) -> str | int:
         """Создание верхнего меню приложения."""
         _upper_name: str = "upper"
         with dpg.menu_bar(
@@ -377,10 +401,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
                 )
                 dpg.add_menu_item(
                     label="Боковая панель",
-                    callback=lambda: dpg.configure_item(
-                        self.sidebar_left_tag,
-                        show=not dpg.get_item_configuration(self.sidebar_left_tag)["show"],
-                    )
+                    callback=lambda: self.hide_sidebar_callback(self),
                 )
                 dpg.add_menu_item(
                     label="Modal",
@@ -418,7 +439,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
 
         return upper_menu
 
-    def _create_footer(self) -> ElementName:
+    def create_footer(self) -> ElementName:
         """Создание нижнего меню состояния приложения."""
 
         with dpg.child_window(
@@ -427,7 +448,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
                 height=self.FOOTER_HEIGHT,
                 width=dpg.get_viewport_width(),
                 pos=(0, dpg.get_viewport_height() - self.FOOTER_HEIGHT),
-                parent=self.app.APP_ELEMENT_LABELS[self.__class__.__name__],
+                parent=self.main_window,
                 autosize_x=True,
                 autosize_y=True,
                 show=WCE.SHOW_FOOTER.value,
@@ -451,7 +472,7 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
 
         return self.footer_tag
 
-    def _create_sidebar(self) -> ElementName:
+    def create_sidebar(self) -> ElementName:
         """Создание бокового окна приложения."""
 
         with dpg.child_window(
@@ -471,11 +492,30 @@ class MainWindow(MainAppElement, MainWindowEventHandler):
 
         self.app.insert_item_resize_callback(sidebar_tag, lambda: self.resize_sidebar_callback(self))
 
-        self.__create_transfer_line()
+        self._create_transfer_line()
 
         return sidebar_tag
 
-    def create_main_window(self) -> str | int:
+    def create_main_container(self) -> None:
+        """Создание контейнера контента приложения."""
+
+        with dpg.child_window(
+                tag=self.container,
+                label=self.container.rstrip("_tag"),
+                parent=self.main_window,
+                border=False,
+                menubar=False,
+                no_scrollbar=True,
+                no_scroll_with_mouse=True,
+                horizontal_scrollbar=False,
+                pos=(self.SIDEBAR_WIDTH, self.UPPER_HEIGHT),
+                height=dpg.get_viewport_height() - (self.FOOTER_HEIGHT + self.UPPER_HEIGHT),
+        ):
+            pass
+        self.app.insert_item_resize_callback(self.container, lambda: self.resize_container_callback(self))
+
+    def create_main_window(self) -> ElementName:
+        """Создание основного окна приложения."""
         with dpg.window(
                 tag="main_tag",
                 label="main",
