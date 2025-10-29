@@ -1,3 +1,4 @@
+import os
 import time
 from enum import IntEnum
 from pathlib import Path
@@ -5,8 +6,12 @@ from pathlib import Path
 import dearpygui.dearpygui as dpg
 import psutil as ps
 from screeninfo import get_monitors, Monitor, ScreenInfoError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from src import WinConstEnum, AppConstEnum
+from src.core.modals import Base
+from src.utils.dir import join_exist_path
 
 CURRENT_PATH = Path(__file__)
 
@@ -39,6 +44,7 @@ class App:
 
     def __init__(self) -> None:
         if not self._initialized:
+            self.session = self._get_db_session()
             self.__create_viewport()
             self.__configurate_global_themes()
             self.__create_handle_mouse_registry()
@@ -68,6 +74,26 @@ class App:
                 dpg.add_font_range_hint(dpg.mvFontRangeHint_Cyrillic)
                 dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
             dpg.bind_font(dg_font)
+
+    @staticmethod
+    def _get_db_session() -> Session:
+        """Проверка и создания файла `БД`, а также создание объекта сессии.
+
+        :return: Session
+        """
+        resources_dir = join_exist_path(os.getcwd(), ("src", "resources"))
+
+        if not os.path.exists(os.path.join(resources_dir, AppConstEnum.DB_NAME.value)):
+            with open(os.path.join(resources_dir, AppConstEnum.DB_NAME.value), "x"):
+                pass
+            db_path = join_exist_path(resources_dir, (AppConstEnum.DB_NAME.value,))
+            sqlite_engine = create_engine(f"sqlite:///{db_path}")
+            Base.metadata.create_all(sqlite_engine)
+        else:
+            db_path = join_exist_path(resources_dir, (AppConstEnum.DB_NAME.value,))
+            sqlite_engine = create_engine(f"sqlite:///{db_path}")
+
+        return sessionmaker(sqlite_engine)()
 
     def __create_handle_mouse_registry(self):
         def run_callback_by_mouse_type(callback_type: MouseActionCallbackEnum) -> None:
