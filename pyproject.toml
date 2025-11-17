@@ -12,6 +12,8 @@ dependencies = [
     "sqlalchemy (>=2.0.42,<3.0.0)",
     "psutil (>=7.1.1,<8.0.0)",
     "dearpygui (>=2.1.0,<3.0.0)",
+    "opencv-python (>=4.12.0.88,<5.0.0.0)",
+    "pillow (>=12.0.0,<13.0.0)",
 ]
 
 [tool.poetry]

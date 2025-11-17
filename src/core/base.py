@@ -1,6 +1,5 @@
 import os
 import time
-from enum import IntEnum
 from pathlib import Path
 
 import dearpygui.dearpygui as dpg
@@ -10,17 +9,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from src import WinConstEnum, AppConstEnum
-from src.core.modals import Base
+from src.constants.application import MouseActionCallbackEnum
+from src.core.modals.modals import Base
 from src.utils.dir import join_exist_path
 
 CURRENT_PATH = Path(__file__)
-
-
-class MouseActionCallbackEnum(IntEnum):
-    moving = 1
-    click = 2
-    release = 3
-    drag = 4
 
 
 class App:
@@ -35,6 +28,7 @@ class App:
     TARGET_FPS: int = AppConstEnum.START_FPS.value
     _RESIZE_ITEM_CALLBACKS: dict[str, callable] = {}
     _MOUSE_CALLBACKS: dict[str, dict[str, callable]] = {action.name: {} for action in MouseActionCallbackEnum}
+    DEBUG_STATUS: bool = AppConstEnum.DEBUG.value
 
     def __new__(cls):
         if cls._instance is None:
@@ -44,7 +38,7 @@ class App:
 
     def __init__(self) -> None:
         if not self._initialized:
-            self.session = self._get_db_session()
+            self.session = self.get_db_session()
             self.__create_viewport()
             self.__configurate_global_themes()
             self.__create_handle_mouse_registry()
@@ -76,7 +70,7 @@ class App:
             dpg.bind_font(dg_font)
 
     @staticmethod
-    def _get_db_session() -> Session:
+    def get_db_session() -> Session:
         """Проверка и создания файла `БД`, а также создание объекта сессии.
 
         :return: Session
@@ -156,8 +150,14 @@ class App:
             return
         del self._RESIZE_ITEM_CALLBACKS[callback_tag]
 
-    def run_resize_callback_by_name(self, name: str, math: bool = False, count_match: int = 1):
-        if not math:
+    def run_resize_callback_by_name(self, name: str, match: bool = False, count_match: int = 1):
+        """Форсированный запуск изменения по имени.
+
+        :param name: Имя callback.
+        :param match: Простой поиск совпадению по имени обратного вызова.
+        :param count_match: Количество совпадений.
+        """
+        if not match:
             if name not in self._RESIZE_ITEM_CALLBACKS:
                 raise KeyError(f"Callback c именем <{name}> не зарегистрирован!")
             self._RESIZE_ITEM_CALLBACKS[name]()
@@ -177,9 +177,12 @@ class App:
 
     def force_all_resize_callbacks(self) -> None:
         for name, callback in self._RESIZE_ITEM_CALLBACKS.items():
-            print(f"INFO >>> Run resize callback <{name}>")
+            if self.DEBUG_STATUS:
+                print(f"INFO >>> Run resize callback <{name}>")
             callback()
-        print("-" * 120)
+        else:
+            if self.DEBUG_STATUS:
+                print("-" * 120)
 
     @staticmethod
     def get_monitor_params(only_prime: bool = False) -> list[Monitor]:

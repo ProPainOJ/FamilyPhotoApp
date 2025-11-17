@@ -2,37 +2,14 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from enum import Enum as PyEnum
 from typing import Optional, Any, cast
 
 from sqlalchemy import ForeignKey, Enum, String, TEXT, Date, DateTime, BigInteger, \
-    CheckConstraint, UUID
+    CheckConstraint, UUID, Boolean, BLOB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-
-class GenderType(PyEnum):
-    MALE = "male"
-    FEMALE = "female"
-
-
-class MediaType(PyEnum):
-    VIDIO = "vidio"
-    PHOTO = "photo"
-    AUDIO = "audio"
-
-
-class EventType(PyEnum):
-    WEDDING = "wedding"
-    BIRTHDAY = "birthday"
-    FUNERAL = "funeral"
-    OTHER = "other"
-
-
-class RelationshipType(PyEnum):
-    BIOLOGICAL = "biological"
-    ADOPTED = "adopted"
-    STEP = "step"
-    MARRIED = "married"
+from src.constants.modals import GenderTypeEnum, RelationshipType, MediaTypeEnum, EventTypeEnum, FileSizeEnum
+from src.external.image.work_sys_media_file import FileExtensionType
 
 
 class Base(DeclarativeBase):
@@ -54,7 +31,7 @@ class Person(Base):
     birth_date: Mapped[Optional[dt.date]] = mapped_column(Date)
     death_date: Mapped[Optional[dt.date]] = mapped_column(Date)
     bio: Mapped[Optional[str]] = mapped_column(TEXT)
-    gender: Mapped[GenderType] = mapped_column(Enum(GenderType))
+    gender: Mapped[GenderTypeEnum] = mapped_column(Enum(GenderTypeEnum))
     faith_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("faith.id", ondelete="SET NULL"),
@@ -111,7 +88,7 @@ class Person(Base):
     def __init__(
             self,
             name,
-            gender: GenderType,
+            gender: GenderTypeEnum,
             surname=None,
             patronymic=None,
             birth_date=None,
@@ -135,13 +112,13 @@ class Person(Base):
         self.birth_date = birth_date
         self.death_date = death_date
         self.bio = bio
-        self.gender = cast(Mapped[GenderType], gender)
+        self.gender = cast(Mapped[GenderTypeEnum], gender)
         self.faith_id = faith_id
 
     def __repr__(self):
         return (
-            f"<{'👨' if self.gender == GenderType.MALE else '👩‍🦳'}"
-            f" | ID: {self.id} | NAME: {self.name} | BERTH_DAY: {self.birth_date}>"
+            f"<{'👨' if self.gender == GenderTypeEnum.MALE else '👩‍🦳'}"
+            f" || ID: {self.id} | NAME: {self.name} | BERTH_DAY: {self.birth_date}>"
             f"{'' if not self.death_date else f" | DEATH_DATE: {self.death_date}"}"
         )
 
@@ -164,7 +141,7 @@ class PersonPersonAssociation(Base):
     )
 
     def __str__(self) -> str:
-        return f"< 👨/⛓️‍💥/👩‍🦳 | ID: {self.leader_id} | NAME: {self.subordinate_id}>"
+        return f"< 👨/⛓️‍💥/👩‍🦳 || ID: {self.leader_id} | NAME: {self.subordinate_id}>"
 
 
 class Media(Base):
@@ -175,9 +152,9 @@ class Media(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    name: Mapped[str] = mapped_column(String(100))
-    type: Mapped[MediaType] = mapped_column(Enum(MediaType))
-    path: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    extension: Mapped[FileExtensionType] = mapped_column(String(10), nullable=False)
+    type: Mapped[MediaTypeEnum] = mapped_column(Enum(MediaTypeEnum), index=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(300))
     date_taken: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.now)
@@ -186,7 +163,8 @@ class Media(Base):
     location_latitude: Mapped[Optional[float]] = mapped_column(comment="Широта")
     location_longitude: Mapped[Optional[float]] = mapped_column(comment="Долгота")
     size_bytes: Mapped[int] = mapped_column(BigInteger, CheckConstraint("size_bytes > 1"))
-
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="Удален ли объект")
+    data: Mapped[bytes] = mapped_column(BLOB, nullable=False, comment="Бинарные данные формата `base64`")
     tag_associations: Mapped[Optional[list["MediaTagAssociation"]]] = relationship(
         back_populates="media",
         cascade="all, delete-orphan",
@@ -202,8 +180,19 @@ class Media(Base):
         cascade="all, delete-orphan",
     )
 
+    def clarify_media_size(self, clarify: FileSizeEnum = FileSizeEnum.B) -> int:
+        _size = self.size_bytes
+        for _ in range(0, clarify.value):
+            _size /= 1024.0
+        return round(_size, 3)
+
+    def __eq__(self, other: Media) -> bool:
+        return self.id == other.id
+
     def __repr__(self):
-        return f"< 💽 | ID: {self.id} | NAME: {self.name} | PATH: {self.path} | SIZE: {self.size_bytes}>"
+        return (f"< 💽 || ID: {self.id} | TYPE: {self.type.value} | NAME: {self.name} |"
+                f" SIZE(B//MB): "
+                f"{self.size_bytes}//{self.clarify_media_size(FileSizeEnum.MB)}>")
 
 
 class MediaTagAssociation(Base):
@@ -218,7 +207,7 @@ class MediaTagAssociation(Base):
     tag: Mapped["Tag"] = relationship(back_populates="media_associations")
 
     def __str__(self) -> str:
-        return f"< 💽/⛓️‍💥/🔖 | ID: {self.media_id} | NAME: {self.tag_id}>"
+        return f"< 💽/⛓️‍💥/🔖 || ID: {self.media_id} | NAME: {self.tag_id}>"
 
 
 class Tag(Base):
@@ -234,7 +223,7 @@ class Tag(Base):
     )
 
     def __str__(self) -> str:
-        return f"< 🔖 | ID: {self.id} | NAME: {self.name}>"
+        return f"< 🔖 || ID: {self.id} | NAME: {self.name}>"
 
 
 class PersonMediaAssociation(Base):
@@ -250,7 +239,7 @@ class PersonMediaAssociation(Base):
     media: Mapped["Media"] = relationship("Media", back_populates="person_associations")
 
     def __str__(self) -> str:
-        return f"< 👨/⛓️‍💥/💽 | ID: {self.person_id} | NAME: {self.media_id}>"
+        return f"< 👨/⛓️‍💥/💽  || ID: {self.person_id} | NAME: {self.media_id}>"
 
 
 class Event(Base):
@@ -262,7 +251,7 @@ class Event(Base):
     location: Mapped[Optional[str]] = mapped_column(String(50))
     location_latitude: Mapped[Optional[float]] = mapped_column(comment="Широта")
     location_longitude: Mapped[Optional[float]] = mapped_column(comment="Долгота")
-    type: Mapped[EventType] = mapped_column(Enum(EventType))
+    type: Mapped[EventTypeEnum] = mapped_column(Enum(EventTypeEnum))
 
     media_associations: Mapped[Optional[list["EventMediaAssociation"]]] = relationship(
         back_populates="event",
@@ -270,7 +259,7 @@ class Event(Base):
     )
 
     def __repr__(self):
-        return f"< ✨ | ID: {self.id} | NAME: {self.name} | TYPE: {self.type} | LOCATION: {self.location}>"
+        return f"< ✨ || ID: {self.id} | NAME: {self.name} | TYPE: {self.type} | LOCATION: {self.location}>"
 
 
 class EventMediaAssociation(Base):
@@ -283,7 +272,7 @@ class EventMediaAssociation(Base):
     media: Mapped["Media"] = relationship(back_populates="event_associations")
 
     def __str__(self) -> str:
-        return f"< ✨/⛓️‍💥/💽 | ID: {self.event_id} | NAME: {self.media_id}>"
+        return f"< ✨/⛓️‍💥/💽 || ID: {self.event_id} | NAME: {self.media_id}>"
 
 
 class Faith(Base):
@@ -298,4 +287,4 @@ class Faith(Base):
     persons: Mapped[list[Person]] = relationship(back_populates="faith")
 
     def __str__(self) -> str:
-        return f"< ☁️ | ID: {self.id} | NAME: {self.name}>"
+        return f"< ☁️ || ID: {self.id} | NAME: {self.name}>"

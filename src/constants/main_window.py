@@ -9,4 +9,3 @@ class WinConstEnum(Enum):
     Y_PADDING = 35
     MIN_HEIGHT = 480
     MIN_WIDTH = 854
-

@@ -1,0 +1,13 @@
+from src.core.exceptions import BaseError
+
+
+class TagWindowError(BaseError): ...
+
+
+class FileSuffixError(BaseError): ...
+
+
+class ImageSizeError(BaseError): ...
+
+
+class ArgValueError(BaseError): ...
