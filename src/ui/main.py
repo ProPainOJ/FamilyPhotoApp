@@ -21,16 +21,16 @@ Point = tuple[POSITION, POSITION]
 class MainWindowEventHandler:
     @classmethod
     def on_mouse_move_callback(cls, _instance: "MainWindow") -> None:
-        if dpg.get_item_configuration(_instance.sidebar_left_tag)["show"]:
+        if dpg.is_item_shown(_instance.sidebar_left_tag):
             active_window = dpg.get_active_window()
-            if 0 <= active_window <= 10:
-                return
-            app_el_type = dpg.get_item_info(dpg.get_active_window())["type"]
-            if "mvMenu" not in app_el_type and InnerLineSeparation.is_mouse_near_line(
+
+            if 0 <= active_window <= 10 or _instance.new_line.dragging: return
+
+            if "mvMenu" not in dpg.get_item_type(active_window) and InnerLineSeparation.is_mouse_near_line(
                     mouse_pos=dpg.get_mouse_pos(local=False),
                     line_p1=_instance.new_line.point1,
                     line_p2=_instance.new_line.point2,
-                    threshold=_instance.new_line.thickness // 2,
+                    threshold=_instance.new_line.thickness,
             ):
                 _instance.new_line.hovered = True
                 _instance.new_line.configurate_line({"show": True})
@@ -42,11 +42,27 @@ class MainWindowEventHandler:
     def on_mouse_click_callback(cls, _instance: "MainWindow"):
         if _instance.new_line.hovered:
             _instance.new_line.dragging = True
+            _instance.new_line.thickness *= 2
+            _instance.new_line.configurate_line({"thickness": _instance.new_line.thickness})
 
     @classmethod
     def on_mouse_release_callback(cls, _instance: "MainWindow"):
         if _instance.new_line.dragging:
             _instance.new_line.dragging = False
+
+            _instance.new_line.hovered = InnerLineSeparation.is_mouse_near_line(
+                mouse_pos=dpg.get_mouse_pos(local=False),
+                line_p1=_instance.new_line.point1,
+                line_p2=_instance.new_line.point2,
+                threshold=_instance.new_line.thickness,
+            )
+
+            if _instance.new_line.hovered:
+                _instance.new_line.configurate_line({"show": True})
+            else:
+                _instance.new_line.configurate_line({"show": False})
+
+            _instance.new_line.thickness /= 2
             _instance.new_line.configurate_line(
                 {
                     "color": _instance.new_line.color,
@@ -58,13 +74,13 @@ class MainWindowEventHandler:
     def on_mouse_drag_callback(cls, _instance: "MainWindow") -> None:
         mouse_x_position_by_dragging = dpg.get_mouse_pos(local=False)[0]
         if _instance.new_line.dragging:
-            accept_side_bar_width = dpg.get_viewport_width() // 3
+            accept_max_sidebar_width = dpg.get_viewport_width() // 5
             if mouse_x_position_by_dragging < WCE.SIDE_BAR_WIDTH.value:
                 mouse_x_position_by_dragging = WCE.SIDE_BAR_WIDTH.value
                 p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
                 p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
-            elif mouse_x_position_by_dragging >= accept_side_bar_width:
-                mouse_x_position_by_dragging = accept_side_bar_width
+            elif mouse_x_position_by_dragging >= accept_max_sidebar_width:
+                mouse_x_position_by_dragging = accept_max_sidebar_width
 
                 p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
                 p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
@@ -72,14 +88,10 @@ class MainWindowEventHandler:
                 p1 = (mouse_x_position_by_dragging, _instance.new_line.point1[1])
                 p2 = (mouse_x_position_by_dragging, _instance.new_line.point2[1])
 
-            _instance.new_line.configurate_line(
-                {
-                    "p1": p1,
-                    "p2": p2,
-                    "color": (155, 0, 0, 255),
-                    "thickness": _instance.new_line.thickness + _instance.new_line.thickness // 2,
-                }
-            )
+            line_color = _instance.new_line.color
+            dragging_color = (*line_color[:-1], min(255, int(line_color[-1] * 1.25)))
+
+            _instance.new_line.configurate_line({"p1": p1, "p2": p2, "color": dragging_color})
             _instance.new_line.point1 = p1
             _instance.new_line.point2 = p2
 
@@ -92,7 +104,7 @@ class MainWindowEventHandler:
     @classmethod
     def resize_transfer_line_callback(cls, _instance: "MainWindow") -> None:
         _instance.new_line.hovered = _instance.new_line.dragging = False
-        p2 = (_instance.new_line.point2[0], dpg.get_viewport_height() - _instance.FOOTER_HEIGHT)
+        p2 = (_instance.new_line.point2[0], dpg.get_viewport_height() - _instance.FOOTER_HEIGHT - 1)
         _instance.new_line.point2 = p2
         _instance.new_line.configurate_line({"p2": p2})
 
@@ -259,7 +271,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         self.line_tag = self.set_new_el_tag(self.class_name, "line")
         self.container = self.set_new_el_tag(self.class_name, "container")
 
-        self.main_window = self.create_window()
+        self.create_window()
         self.create_upper()
         self.create_footer()
         self.create_sidebar()
@@ -296,7 +308,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
             with dpg.theme_component(dpg.mvMenu):
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 5, 5, category=dpg.mvThemeCat_Core)
 
-        dpg.bind_item_theme(self.main_window, main_tag)
+        dpg.bind_item_theme(self.main_content_tag, main_tag)
 
         with dpg.theme() as main_footer_theme_tag:
             with dpg.theme_component(dpg.mvAll):
@@ -315,8 +327,8 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
     def _create_transfer_line(self) -> Optional[ElementName]:
         with dpg.viewport_drawlist() as viewport_drawlist:
             start_line_position: tuple[Point, Point] = (
-                (self.SIDEBAR_WIDTH, self.UPPER_HEIGHT),
-                (self.SIDEBAR_WIDTH, dpg.get_viewport_height() - self.FOOTER_HEIGHT),
+                (self.SIDEBAR_WIDTH, self.UPPER_HEIGHT + 2),
+                (self.SIDEBAR_WIDTH, dpg.get_viewport_height() - self.FOOTER_HEIGHT - 1),
             )
             self.new_line = InnerLineSeparation(
                 label=self.line_tag.strip("_" + self.app.TAG),
@@ -324,7 +336,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 point2=start_line_position[1],
                 parent=viewport_drawlist,
                 thickness=2,
-                color=(252, 199, 249),
+                color=(255, 255, 255, 255 / 2),
             )
             self.line_tag = self.new_line.draw_line()
 
@@ -416,7 +428,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         with dpg.menu_bar(
                 tag="_".join((self.WINDOW_NAME, _upper_name, self.app.TAG)),
                 label=_upper_name,
-                parent=self.main_window,
+                parent=self.main_content_tag,
         ) as upper_menu:
             with dpg.menu(label="Меню"):
                 dpg.add_menu_item(
@@ -482,7 +494,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 height=self.FOOTER_HEIGHT,
                 width=dpg.get_viewport_width(),
                 pos=(0, dpg.get_viewport_height() - self.FOOTER_HEIGHT),
-                parent=self.main_window,
+                parent=self.main_content_tag,
                 autosize_x=True,
                 autosize_y=True,
                 show=WCE.SHOW_FOOTER.value,
@@ -512,7 +524,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         with dpg.child_window(
                 tag=self.sidebar_left_tag,
                 label=self.sidebar_left_tag.rstrip("_" + self.app.TAG),
-                parent=self.main_window,
+                parent=self.main_content_tag,
                 pos=(0, self.UPPER_HEIGHT),
                 width=self.SIDEBAR_WIDTH,
                 height=dpg.get_viewport_height() - (self.FOOTER_HEIGHT + self.UPPER_HEIGHT),
@@ -540,7 +552,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         with dpg.child_window(
                 tag=self.container,
                 label=self.container.rstrip("_tag"),
-                parent=self.main_window,
+                parent=self.main_content_tag,
                 border=False,
                 menubar=False,
                 no_scrollbar=True,
@@ -555,7 +567,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
     def create_window(self) -> ElementName:
         """Создание основного окна приложения."""
         with dpg.window(
-                tag="main_tag",
+                tag=self.main_content_tag,
                 label="main",
                 menubar=True,
                 no_move=True,
@@ -565,6 +577,8 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 no_scroll_with_mouse=True,
                 no_scrollbar=True,
                 horizontal_scrollbar=False,
+                no_background=True,
+                no_close=True
         ) as main_window:
             self.app.set_primary_window(main_window)
 

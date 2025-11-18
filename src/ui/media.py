@@ -140,7 +140,7 @@ class GetContentWindow(BaseAppWindow):
                 data=default_image,
             )
 
-        with dpg.child_window(tag=self.main_content_tag, parent=self.main_parent_container, show=True):
+        with dpg.child_window(tag=self.main_content_tag, parent=self.main_parent_container, show=False, border=False):
             dpg.add_texture_registry(id=self.texture_reg_tag)
 
         GetContentWindow.CURRENT_MEDIA = start_media
