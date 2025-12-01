@@ -4,11 +4,15 @@ from src import App
 from src.core.modals.modals import MediaTypeEnum
 from src.core.services.media_service import MediaService
 from src.external.image.work_sys_media_file import FileExtensionType, WorkWithSystemMedia
-from src.ui import BaseAppWindow
+from src.ui import BaseAppWindow, MainAppCallbackHandlerABC
 from src.ui.main import MainWindow
 
 
-class NewContentWindow(BaseAppWindow):
+class NewContentWindowCallbackHandler(MainAppCallbackHandlerABC):
+    pass
+
+
+class NewContentWindow(BaseAppWindow, NewContentWindowCallbackHandler):
     def __init__(self, main_app: App) -> None:
         super().__init__(main_app, MainWindow.__name__)
         self.create_window()

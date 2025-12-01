@@ -9,7 +9,7 @@ from src import WinConstEnum as WCE
 from src.core.base import MouseActionCallbackEnum
 from src.core.modals.modals import Media
 from src.core.services.media_service import MediaService
-from src.ui import BaseAppWindow
+from src.ui import BaseAppWindow, MainAppCallbackHandlerABC
 from src.ui.media import GetContentWindow
 
 POSITION = TypeVar('POSITION', int, float)
@@ -18,7 +18,7 @@ ElementName = TypeVar('ElementName', str, int)
 Point = tuple[POSITION, POSITION]
 
 
-class MainWindowEventHandler:
+class MainWindowEventHandler(MainAppCallbackHandlerABC):
     @classmethod
     def on_mouse_move_callback(cls, _instance: "MainWindow") -> None:
         if dpg.is_item_shown(_instance.sidebar_left_tag):
@@ -390,7 +390,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 label="Значение FPS приложения",
                 default_value=self.app.TARGET_FPS,
                 min_value=30,
-                max_value=144,
+                max_value=60,
                 no_input=True,
             )
             dpg.add_button(

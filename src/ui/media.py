@@ -10,12 +10,16 @@ from src import App
 from src.core.modals.modals import Media
 from src.core.services.media_service import MediaService
 from src.external.image.base import ImageHandler, DearImage
-from src.ui import BaseAppWindow, AppTagHelper
+from src.ui import BaseAppWindow, AppTagHelper, MainAppCallbackHandlerABC
 
 TagName: TypeAlias = str | int
 
 
-class GetContentWindow(BaseAppWindow):
+class GetContentWindowCallbackHandler(MainAppCallbackHandlerABC):
+    pass
+
+
+class GetContentWindow(BaseAppWindow, GetContentWindowCallbackHandler):
     CURRENT_MEDIA: Media = None
     CREATED_MEDIA: set[TagName] = {}
     MIN_MEDIA_CONTENT_WIDTH: int = 570

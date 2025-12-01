@@ -5,9 +5,14 @@ import dearpygui.dearpygui as dpg
 
 from src import App
 from src import WinConstEnum as WCE
-from src.core.exceptions.application_exception import TagWindowError
+from src.core.exceptions.application_exception import TagWindowError, NotImplementClassError
 
 MyIterType: TypeAlias = Union[list[str | LiteralString], tuple[str | LiteralString, ...]]
+
+
+class MainAppCallbackHandlerABC(ABC):
+    """Основной абстрактный класс для всех коллбек классов окон приложения."""
+    pass
 
 
 class MainAppABC(ABC):
@@ -139,6 +144,16 @@ class BaseAppWindow(MainAppABC, AppTagHelper):
     """Базовый класс для создания UI приложения."""
     MAIN_CONTAINER_TAG_NAME = ("main", "content", "container")
     SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value
+
+    def __init_subclass__(cls, **kwargs):
+        """Проверка, что класс имеет выделанный обработчик коллбеков."""
+        if not any(base_classes is MainAppCallbackHandlerABC for base_classes in cls.__mro__[1:-1]):
+            raise NotImplementClassError(
+                msg=f"Класс {cls.__name__} должен наследоваться от {MainAppCallbackHandlerABC.__name__}!",
+                targets=[cls.__name__],
+                pre_decision=f"Создайте класс {cls.__name__ + "CallbackHandler"}."
+            )
+        super().__init_subclass__(**kwargs)
 
     def __init__(self, main_app: App, class_name: str) -> None:
         self.app = main_app
