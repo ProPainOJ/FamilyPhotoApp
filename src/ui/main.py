@@ -26,7 +26,12 @@ class MainWindowEventHandler(MainAppCallbackHandlerABC):
 
             if 0 <= active_window <= 10 or _instance.new_line.dragging: return
 
-            if "mvMenu" not in dpg.get_item_type(active_window) and InnerLineSeparation.is_mouse_near_line(
+            try:
+                item_type = dpg.get_item_type(active_window)
+            except SystemError:
+                return
+
+            if App.CUSTOM_SIDEBAR_LINE_ACTIVE and "mvMenu" not in item_type and InnerLineSeparation.is_mouse_near_line(
                     mouse_pos=dpg.get_mouse_pos(local=False),
                     line_p1=_instance.new_line.point1,
                     line_p2=_instance.new_line.point2,
@@ -340,25 +345,25 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
             )
             self.line_tag = self.new_line.draw_line()
 
-        self.app.insert_mouse_moving_callback(
-            name=self.line_tag,
+        self.app.insert_mouse_callback(
+            name=self.line_tag + "moving",
             callback=lambda: self.on_mouse_move_callback(self),
-            callback_type=MouseActionCallbackEnum.moving,
+            mouse_action_type=MouseActionCallbackEnum.moving,
         )
-        self.app.insert_mouse_moving_callback(
-            name=self.line_tag,
+        self.app.insert_mouse_callback(
+            name=self.line_tag + "click",
             callback=lambda: self.on_mouse_click_callback(self),
-            callback_type=MouseActionCallbackEnum.click,
+            mouse_action_type=MouseActionCallbackEnum.click,
         )
-        self.app.insert_mouse_moving_callback(
-            name=self.line_tag,
+        self.app.insert_mouse_callback(
+            name=self.line_tag + "release",
             callback=lambda: self.on_mouse_release_callback(self),
-            callback_type=MouseActionCallbackEnum.release,
+            mouse_action_type=MouseActionCallbackEnum.release,
         )
-        self.app.insert_mouse_moving_callback(
-            name=self.line_tag,
+        self.app.insert_mouse_callback(
+            name=self.line_tag + "drag",
             callback=lambda: self.on_mouse_drag_callback(self),
-            callback_type=MouseActionCallbackEnum.drag,
+            mouse_action_type=MouseActionCallbackEnum.drag,
         )
 
         self.app.insert_item_resize_callback(self.line_tag, lambda: self.resize_transfer_line_callback(self))
@@ -450,7 +455,10 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 )
                 dpg.add_menu_item(
                     label="Загрузить файл",
-                    callback=lambda: dpg.show_item("file_dialog_tag")
+                    callback=lambda: dpg.configure_item(
+                        item=self.get_el_tag("ContentWindow", self.MAIN_CONTAINER_TAG_NAME),
+                        show=not dpg.is_item_shown(self.get_el_tag("ContentWindow", self.MAIN_CONTAINER_TAG_NAME))
+                    )
                 )
 
             with dpg.menu(label="Настройки"):
@@ -534,12 +542,21 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
 
             with dpg.group(horizontal=False):
                 for button_index, media in enumerate(medias):
-                    dpg.add_button(
+                    btn_tag = dpg.add_button(
                         label=media.name,
                         callback=self._set_new_media_callback,
                         pos=(2, 26 * button_index),
                         user_data=media,
                     )
+                    with dpg.popup(
+                            dpg.last_item(),
+                            tag=f"modal_{btn_tag}",
+                            mousebutton=dpg.mvMouseButton_Right,
+                            modal=False,
+                    ) as popup:
+                        dpg.add_button(label="Удалить", callback=lambda: (
+                            dpg.delete_item(btn_tag), dpg.configure_item(popup, show=False)))
+
         self.app.insert_item_resize_callback(sidebar_tag, lambda: self._resize_left_line_callback())
 
         self._create_transfer_line()

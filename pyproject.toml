@@ -6,7 +6,7 @@ authors = [
     { name = "Григорий Т.", email = "you@example.com" }
 ]
 readme = "README.md"
-requires-python = "=3.12.11"
+requires-python = "==3.12.11"
 dependencies = [
     "screeninfo (>=0.8.1,<0.9.0)",
     "sqlalchemy (>=2.0.42,<3.0.0)",
@@ -43,3 +43,14 @@ addopts = "-v"
 testpaths = [
     "tests",
 ]
+
+[tool.ruff]
+line-length = 120
+preview = true
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+
+
+[tool.ruff.format]
+quote-style = "single"

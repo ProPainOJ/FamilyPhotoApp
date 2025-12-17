@@ -19,13 +19,13 @@ class PointCoordinate:
     def __post_init__(self) -> None:
         if self.x < 0 or self.y < 0:
             raise ArgValueError(msg="x и y не могут быть менее 0!")
-        self.coordinate = (self.x, self.y)
+        self.to_pos = (self.x, self.y)
 
     def __iter__(self) -> tuple[int, int]:
         return self.x, self.y
 
     def __str__(self) -> str:
-        return f"coordinate: {self.coordinate}"
+        return f"coordinate: {self.to_pos}"
 
 
 class Rectangle(NamedTuple):
@@ -129,7 +129,7 @@ class RectangularImageElement(Quadrilateral):
 
 
 def get_element_pos(
-        el_settings: RectangularImageElement = None,
+        el_settings: RectangularImageElement,
         perc_padding: Float0To1 = 0.5,
         left_padding: int = 0,
         top_padding: int = 0,

@@ -14,3 +14,9 @@ FILE_EXTENSION: dict[str, FileExtensionType] = {
     "jpg": FileExtensionType.JPG,
     "heic": FileExtensionType.HEIC,
 }
+
+
+class MediaTagFields(StrEnum):
+    description = "description_input"
+    type = "media_type"
+    location = "location"

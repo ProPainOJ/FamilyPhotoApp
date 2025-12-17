@@ -156,6 +156,11 @@ class BaseAppWindow(MainAppABC, AppTagHelper):
         super().__init_subclass__(**kwargs)
 
     def __init__(self, main_app: App, class_name: str) -> None:
+        """Создание UI-класса приложения.
+
+        :param main_app: Базовый класс приложения `App`.
+        :param class_name: Имя UI-класса.
+        """
         self.app = main_app
         self.class_name = class_name
         self.main_content_tag = self.set_new_el_tag(self.class_name, self.MAIN_CONTAINER_TAG_NAME)

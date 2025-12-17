@@ -130,7 +130,7 @@ class GetContentWindow(BaseAppWindow, GetContentWindowCallbackHandler):
             image_tag,
             width=new_size[0],
             height=new_size[1],
-            pos=new_image_center_pos.coordinate,
+            pos=new_image_center_pos.to_pos,
         )
 
     def create_window(self):
