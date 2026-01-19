@@ -1,5 +1,5 @@
 import os
-from typing import TypeAlias
+from typing import TypeAlias, Final
 from uuid import uuid4
 
 import dearpygui.dearpygui as dpg
@@ -10,20 +10,20 @@ from src import App
 from src.core.modals.modals import Media
 from src.core.services.media_service import MediaService
 from src.external.image.base import ImageHandler, DearImage
-from src.ui import BaseAppWindow, AppTagHelper, MainAppCallbackHandlerABC
+from src.ui import BaseAppWindow, AppTagHelper, MainAppCallbackHandler
 
 TagName: TypeAlias = str | int
 
 
-class GetContentWindowCallbackHandler(MainAppCallbackHandlerABC):
+class GetContentWindowEventHandler(MainAppCallbackHandler):
     pass
 
 
-class GetContentWindow(BaseAppWindow, GetContentWindowCallbackHandler):
-    CURRENT_MEDIA: Media = None
+class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler):
+    CURRENT_MEDIA: Media | None = None
     CREATED_MEDIA: set[TagName] = {}
-    MIN_MEDIA_CONTENT_WIDTH: int = 570
-    MIN_MEDIA_CONTENT_HEIGHT: int = 438
+    MIN_MEDIA_CONTENT_WIDTH: Final[int] = 570
+    MIN_MEDIA_CONTENT_HEIGHT: Final[int] = 438
 
     def __init__(self, main_app: App) -> None:
         super().__init__(main_app, self.__class__.__name__)
@@ -41,7 +41,7 @@ class GetContentWindow(BaseAppWindow, GetContentWindowCallbackHandler):
         :param new_media: Объект ``Media`` для отрисовки
         """
 
-        start_tag = f"raw_image"
+        start_tag = "raw_image"
         new_image_tag = "_".join((start_tag, new_media.id.__str__()))
         old_image_tag = "_".join((start_tag, GetContentWindow.CURRENT_MEDIA.id.__str__()))
 

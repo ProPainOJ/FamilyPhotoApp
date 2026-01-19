@@ -1,28 +1,55 @@
+from typing import Final
+from uuid import uuid4, UUID
+
 import dearpygui.dearpygui as dpg
 
 from src import App
 from src.constants.application import NotificationLevelEnum, ColorsEnum
 from src.constants.media import MediaTagFields
 from src.constants.types import DPGTag
-from src.core.modals.modals import MediaTypeEnum
+from src.core.exceptions.application_exception import FileSuffixError
+from src.core.modals.modals import MediaTypeEnum, Tag
 from src.core.services.media_service import MediaService
+from src.core.services.tag_service import TagService
 from src.external.image.media_file import MediaFile
 from src.external.image.work_sys_media_file import FileExtensionType, WorkWithSystemMedia
-from src.ui import BaseAppWindow, MainAppCallbackHandlerABC
+from src.ui import BaseAppWindow, MainAppCallbackHandler
+from src.ui.main import MainWindow
 from src.ui.media import GetContentWindow
 from src.utils.position import get_element_pos, RectangularImageElement
 
 
 class NewContentWindowThemesHandler:
-    pass
+    @staticmethod
+    def rounded_btn_theme() -> DPGTag:
+        with dpg.theme() as rounded_btn_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 15)
+        return rounded_btn_theme
+
+    @staticmethod
+    def error_text_input() -> DPGTag:
+        with dpg.theme() as error_text:
+            with dpg.theme_component(dpg.mvInputText):
+                dpg.add_theme_color(dpg.mvThemeCol_Text, ColorsEnum.RED.value.to_tuple())
+        return error_text
+
+    @staticmethod
+    def opacity_win_theme_tag() -> DPGTag:
+        with dpg.theme() as opacity_win_theme_tag:
+            with dpg.theme_component(dpg.mvChildWindow):
+                dpg.add_theme_color(
+                    dpg.mvThemeCol_ChildBg,
+                    value=ColorsEnum.TRANSPARENT.value.to_tuple(),
+                    category=dpg.mvThemeCat_Core,
+                )
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 15, category=dpg.mvThemeCat_Core)
+        return opacity_win_theme_tag
 
 
-class NewContentWindowResizeCallbacks(MainAppCallbackHandlerABC):
-    pass
-
-
-class NewContentWindowHandler(NewContentWindowResizeCallbacks,
-                              NewContentWindowThemesHandler):
+class NewContentWindowEventHandler(MainAppCallbackHandler):
+    """Обработка обратных вызовов"""
+    _instance: "ContentWindow"
 
     @staticmethod
     def show_file_dialog(file_dialog_tag: DPGTag, _instance: "ContentWindow") -> None:
@@ -41,102 +68,214 @@ class NewContentWindowHandler(NewContentWindowResizeCallbacks,
 
     @staticmethod
     def save_media_info() -> None:
-        if ContentWindow.MEDIA_FILE is None:
-            return
-        print(
-            MediaService().create_media(
-                name=ContentWindow.MEDIA_FILE.name,
-                media_type=MediaTypeEnum.PHOTO,
-                size_bytes=ContentWindow.MEDIA_FILE.size,
-                extension=ContentWindow.MEDIA_FILE.extension,
-                data=ContentWindow.MEDIA_FILE.data,
-                description=dpg.get_value(BaseAppWindow.get_el_tag("ContentWindow", MediaTagFields.description)),
-                location=dpg.get_value(BaseAppWindow.get_el_tag("ContentWindow", MediaTagFields.location)),
-            )
-        )
+        """Сохранение нового медиа-объекта"""
+        user_tags: dict[UUID, Tag] = {tag.id: tag for tag in ContentWindow.user_tags}
+        all_tags: dict[UUID, Tag] = {tag.id: tag for tag in ContentWindow.all_accepted_tags}
+        media_service = MediaService()
+
+        new_media = {
+            "name": ContentWindow.media_file.name,
+            "media_type": dpg.get_value(BaseAppWindow.get_el_tag("ContentWindow", MediaTagFields.type)),
+            "size_bytes": ContentWindow.media_file.size,
+            "extension": ContentWindow.media_file.extension,
+            "data": ContentWindow.media_file.data,
+            "description": dpg.get_value(BaseAppWindow.get_el_tag("ContentWindow", MediaTagFields.description)),
+            "location": dpg.get_value(BaseAppWindow.get_el_tag("ContentWindow", MediaTagFields.location)),
+        }
+
+        if ContentWindow.selected_tags:
+            tags: list[Tag] = []
+            for tag_uuid in ContentWindow.selected_tags:
+                if tag_uuid in user_tags:
+                    new_tag = TagService().create_new_tag(id=tag_uuid, name=user_tags[tag_uuid].name)
+                    tags.append(new_tag)
+                else:
+                    tags.append(all_tags[tag_uuid])
+            media_obj = media_service.create_media(**new_media)
+            media_service.create_media_with_tags(media_obj, tags)
+        else:
+            media_service.create_media(**new_media)
+
+        NewContentWindowEventHandler._instance.clear_input_fields()
 
     @staticmethod
     def close_clear_alert(alert_win: str, clear: bool) -> None:
         dpg.configure_item(alert_win, show=False)
         if clear:
-            NewContentWindowHandler.clear_fields()
-
-    @staticmethod
-    def clear_fields():
-        for filed_tag in MediaTagFields:
-            filed_to_clear = BaseAppWindow.get_el_tag("ContentWindow", filed_tag)
-            if filed_tag == MediaTagFields.type:
-                dpg.configure_item(filed_to_clear, default_value=MediaTypeEnum.PHOTO)
-            else:
-                dpg.set_value(filed_to_clear, "")
-        ContentWindow.MEDIA_FILE = None
+            NewContentWindowEventHandler.clear_input_fields()
 
     @staticmethod
     def save_file_dialog(sender, app_data, user_data: "GetContentWindow") -> None:
+        file_name_len: Final[int] = 20
         App.CUSTOM_SIDEBAR_LINE_ACTIVE = True
         selected_files: dict[str, str] = app_data['selections']
 
         if not selected_files:
             return
 
-        for file_name, file_path in selected_files.items():
+        for _, file_path in selected_files.items():
             try:
-                ContentWindow.MEDIA_FILE = WorkWithSystemMedia.create_media_file(file_path)
-            except FileNotFoundError as e:
-                print(e.__str__())
+                media_file = WorkWithSystemMedia.create_media_file(file_path)
+            except FileNotFoundError:
+                NewContentWindowEventHandler._instance.app.create_notification(
+                    message="Файл был удалён или перемешен!",
+                    duration=5,
+                    lvl=NotificationLevelEnum.WARNING,
+                )
+            except FileSuffixError as e:
+                NewContentWindowEventHandler._instance.app.create_notification(
+                    message=f"Неверный формат файла ({e.target[0]})!",
+                    duration=5,
+                    lvl=NotificationLevelEnum.WARNING,
+                )
+            else:
+                ContentWindow.media_file = media_file
+                if len(media_file.name) > file_name_len:
+                    short_name = media_file.name[:file_name_len] + "..."
+                else:
+                    short_name = media_file.name
+                NewContentWindowEventHandler._instance.app.create_notification(
+                    message=f"Файл `{short_name}` успешно выбран!",
+                    duration=4,
+                    lvl=NotificationLevelEnum.DEFAULT,
+                )
 
     @staticmethod
-    def toggle_selection(sender, app_data, user_data: DPGTag):
-        selected_tags_window = BaseAppWindow.get_el_tag(ContentWindow.__name__, ("selected", "tags"))
+    def clear_input_fields() -> None:
+        """Очистка полей ввода формы создания медиа-файла"""
+        for filed_tag in MediaTagFields:
+            filed_to_clear = BaseAppWindow.get_el_tag("ContentWindow", filed_tag)
+            if filed_tag == MediaTagFields.type:
+                dpg.configure_item(filed_to_clear, default_value=MediaTypeEnum.PHOTO)
+            else:
+                dpg.set_value(filed_to_clear, "")
 
-        label = dpg.get_item_label(sender)
+    @staticmethod
+    def toggle_selection(sender: str, app_data: None, user_data: str) -> None:
+        """Выбор тега для меди-файла
+
+        :param sender: UUID.__str__() Нажатый тег
+        :param app_data: None
+        :param user_data: UUID.__str__() Связанный ответный тег
+        """
+        shown_win_tag = BaseAppWindow.get_el_tag(ContentWindow.__name__, ("selected", "tags"))
+        non_shown_win_tag = BaseAppWindow.get_el_tag(ContentWindow.__name__, ("available", "tags"))
 
         dpg.configure_item(sender, show=not dpg.is_item_shown(sender))
         dpg.configure_item(user_data, show=not dpg.is_item_shown(user_data))
+        user_data: UUID = UUID(user_data)
+        if user_data in ContentWindow.selected_tags:
+            ContentWindow.selected_tags.remove(user_data)
+            ContentWindow.active_tag_counter += 1
 
-        if label in ContentWindow.SELECTED_TAGS:
-            ContentWindow.SELECTED_TAGS.remove(user_data)
-            if not ContentWindow.SELECTED_TAGS:
-                dpg.configure_item(selected_tags_window, show=False)
+            if ContentWindow.active_tag_counter > 0:
+                dpg.configure_item(non_shown_win_tag, show=True)
+            if not ContentWindow.selected_tags:
+                dpg.configure_item(shown_win_tag, show=False)
         else:
-            ContentWindow.SELECTED_TAGS.append(sender)
-            if not dpg.is_item_shown(selected_tags_window):
-                dpg.configure_item(selected_tags_window, show=True)
-        dpg.set_value(
-            "selected_text",
-            f"Выбранные: {', '.join(ContentWindow.SELECTED_TAGS) if ContentWindow.SELECTED_TAGS else 'Ничего не добавлено...'}"
-        )
+            ContentWindow.selected_tags.append(UUID(sender))
+            ContentWindow.active_tag_counter -= 1
+
+            if ContentWindow.active_tag_counter <= 0:
+                ContentWindow.active_tag_counter = 0
+                dpg.configure_item(non_shown_win_tag, show=False)
+            if not dpg.is_item_shown(shown_win_tag):
+                dpg.configure_item(shown_win_tag, show=True)
+
+    def add_new_tag(self, sender: DPGTag, app_data: str, user_data: None) -> None:
+        """Добавление нового тега пользователя.
+
+        :param sender: ID поля для ввода тега.
+        :param app_data: Название нового тега пользователя.
+        :param user_data: None.
+        """
+        for tag in self._instance.user_tags:
+            if tag.name == app_data:
+                break
+        else:
+            self._instance.update_tag_selector(Tag(id=UUID(uuid4().__str__()), name=dpg.get_value(sender)))
+        dpg.set_value(sender, ""),
 
 
-class ContentWindow(BaseAppWindow, NewContentWindowHandler):
-    MEDIA_FILE: MediaFile = None
-    SELECTED_TAGS: list = []
-    SELECTED_TAGS_ROW_WIDTH: int = 0
+class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindowThemesHandler):
+    TAG_ROW_WIDTH: Final[int] = 500
+    media_file: MediaFile | None = None
+    selected_tags: list[UUID] = []
+    user_tags: list[Tag] = []
+    all_accepted_tags: list[Tag] = []
+    active_tag_counter: int = 0
 
     def __init__(self, main_app: App) -> None:
-        super().__init__(main_app, self.__class__.__name__)
-
+        super().__init__(main_app=main_app, class_name=self.__class__.__name__)
+        NewContentWindowEventHandler._instance = self
+        self.current_row_width: int = 0
+        self.selected_row_group, self.available_row_group = None, None
         self.main_parent_container = self.get_el_tag(tag_target="MainWindow", tag_name=("container",))
 
         self._create_clear_alert_window()
         self.create_window()
         self.create_update_media_window()
-        self.create_del_media_window()
+
+    def update_tag_selector(self, new_tag: Tag | None = None) -> None:
+        """Обновление списка доступных тегов медиа-файла.
+
+        :param new_tag: Теги добавленные пользователем вручную.
+        """
+        if new_tag is not None:
+            ContentWindow.user_tags.append(new_tag)
+            ContentWindow.all_accepted_tags.append(new_tag)
+        else:
+            ContentWindow.all_accepted_tags.extend([*TagService().get_weak_tags()])
+        ContentWindow.active_tag_counter = len(ContentWindow.all_accepted_tags)
+
+        for media_tag in ContentWindow.all_accepted_tags:
+            dpg.configure_item(self.get_el_tag(self.class_name, ("available", "tags")), show=True)
+            tag, label = media_tag.id.__str__(), f"#{media_tag.name}"
+
+            if dpg.does_item_exist(tag):
+                continue
+
+            button_width = len(label) * 10 + 10
+
+            if self.selected_row_group is None or self.current_row_width + button_width > ContentWindow.TAG_ROW_WIDTH:
+                self.available_row_group = dpg.add_group(
+                    horizontal=True, parent=self.get_el_tag(self.class_name, ("available", "tags"))
+                )
+                self.selected_row_group = dpg.add_group(
+                    horizontal=True, parent=self.get_el_tag(self.class_name, ("selected", "tags"))
+                )
+                self.current_row_width = 0
+
+            self.current_row_width += button_width + 10
+
+            selected_tag = dpg.add_button(
+                tag=uuid4().__str__(),
+                label=label,
+                parent=self.selected_row_group,
+                callback=self.toggle_selection,
+                show=False,
+            )
+            available_tag = dpg.add_button(
+                tag=tag,
+                label=label,
+                parent=self.available_row_group,
+                callback=self.toggle_selection,
+                show=True,
+                user_data=selected_tag,
+            )
+            dpg.configure_item(selected_tag, user_data=available_tag)
+
+            dpg.bind_item_theme(
+                selected_tag,
+                self.rounded_btn_theme()
+            )
+            dpg.bind_item_theme(
+                available_tag,
+                self.rounded_btn_theme(),
+            )
 
     def __create_media_fields(self) -> None:
-        with dpg.theme() as rounded_btn_theme:
-            with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 15)
-
-        with dpg.theme() as opacity_win_theme_tag:
-            with dpg.theme_component(dpg.mvChildWindow):
-                dpg.add_theme_color(
-                    dpg.mvThemeCol_ChildBg,
-                    value=ColorsEnum.TRANSPARENT.value.to_tuple(),
-                    category=dpg.mvThemeCat_Core,
-                )
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 15, category=dpg.mvThemeCat_Core)
-
+        """Создание полей для ввода данных медиа-файла"""
         dpg.add_spacer(height=10)
         dpg.add_text("Тип файла: ")
         dpg.add_combo(
@@ -159,10 +298,7 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
             always_overwrite=True,
         )
 
-        options = ["Тег"] * 125
-
         dpg.add_spacer(height=5)
-        dpg.add_text("Выбранные теги: Ничего не добавлено...", tag="selected_text")
         dpg.bind_item_theme(
             dpg.add_child_window(
                 tag=self.set_new_el_tag(self.class_name, ("selected", "tags")),
@@ -172,59 +308,42 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
                 horizontal_scrollbar=False,
                 show=False,
             ),
-            opacity_win_theme_tag
+            self.opacity_win_theme_tag()
         )
 
+        non_sel_tag = self.set_new_el_tag(self.class_name, ("available", "tags"))
         dpg.add_text("Доступные теги: ")
         dpg.bind_item_theme(
             dpg.add_child_window(
-                tag=self.set_new_el_tag(self.class_name, ("non", "selected", "tags")),
+                tag=non_sel_tag,
                 height=80,
                 width=int(App.MIN_WIDTH // 1.5),
                 border=False,
                 horizontal_scrollbar=False,
-                show=True,
+                show=False,
             ),
-            opacity_win_theme_tag
+            self.opacity_win_theme_tag()
         )
 
-        selectable_row_group, non_selected_row_group = None, None
-        current_row_width = 0
-        for i, option in enumerate(options):
-            option = f"#{option} {i}"
-            if selectable_row_group is None or current_row_width > 500:
-                non_selected_row_group = dpg.add_group(
-                    horizontal=True, parent=self.get_el_tag(self.class_name, ("non", "selected", "tags")))
-                selectable_row_group = dpg.add_group(
-                    horizontal=True, parent=self.get_el_tag(self.class_name, ("selected", "tags")))
-                current_row_width = 0
+        with dpg.group(horizontal=True):
+            dpg.add_text("Добавление нового тега:")
+            with dpg.tooltip(
+                    dpg.add_input_text(
+                        tag=self.set_new_el_tag(self.class_name, "new_tag"),
+                        hint="Введите новый тег",
+                        callback=self.add_new_tag,
+                        no_spaces=True,
+                        on_enter=True,
+                        auto_select_all=True,
+                        always_overwrite=True,
+                        width=200,
+                    ),
+                    delay=.3,
+                    hide_on_activity=True
+            ):
+                dpg.add_text("Нажмите `Enter` для сохранения")
 
-            button_width = len(option) * 10 + 10
-
-            selectable_btn = dpg.add_button(
-                label=option,
-                parent=selectable_row_group,
-                callback=self.toggle_selection,
-                show=False,
-            )
-            non_selectable_btn = dpg.add_button(
-                tag=option,
-                label=option,
-                parent=non_selected_row_group,
-                callback=self.toggle_selection,
-                show=True,
-                user_data=selectable_btn,
-            )
-            dpg.configure_item(selectable_btn, user_data=non_selectable_btn)
-            dpg.bind_item_theme(
-                selectable_btn,
-                rounded_btn_theme
-            )
-            dpg.bind_item_theme(
-                non_selectable_btn,
-                rounded_btn_theme
-            )
-            current_row_width += button_width + 10
+        self.update_tag_selector()
 
     def _create_clear_alert_window(self):
         with dpg.window(
@@ -237,12 +356,12 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
                 modal=True,
                 no_close=True,
                 no_title_bar=True,
-                height=100,
+                height=120,
                 width=424,
         ) as alert_win:
-            dpg.add_text("Все поля будут очищены!", indent=100)
+            dpg.add_text("Все поля для ввода будут очищены!", indent=100)
             dpg.add_spacer()
-            dpg.add_text("Продолжить операцию?")
+            dpg.add_text("Теги будут сохранены, но поля для ввода очищены.\n Продолжить операцию?")
             with dpg.group(horizontal=True):
                 dpg.add_button(
                     label="OK",
@@ -262,7 +381,7 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
         dpg.bind_item_theme(alert_win, item_theme)
 
     def _create_file_dialog_window(self) -> DPGTag:
-        """Создание модального окна для выбора файла."""
+        """Создание модального окна для выбора файла"""
         with dpg.file_dialog(
                 tag=self.set_new_el_tag(self.class_name, ("file", "dialog")),
                 directory_selector=False,
@@ -284,6 +403,26 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
         self.app.insert_item_resize_callback(callback_name=file_dialog_tag, new_callback=self.resize_file_dialog)
         return file_dialog_tag
 
+    def clear_input_fields(self) -> None:
+        """Полная очистка при выходе из формы создания"""
+        super().clear_input_fields()
+        ContentWindow.media_file = None
+        ContentWindow.user_tags.clear()
+        ContentWindow.selected_tags.clear()
+        ContentWindow.all_accepted_tags.clear()
+        ContentWindow.active_tag_counter = 0
+        self.current_row_width, self.selected_row_group, self.available_row_group = 0, None, None
+        available_group_tags: list[int] = dpg.get_item_children(
+            self.get_el_tag(self.class_name, ("available", "tags"))
+        )[1]
+        available_group_tags.extend(
+            dpg.get_item_children(self.get_el_tag(self.class_name, ("selected", "tags")))[1]
+        )
+        dpg.configure_item(self.get_el_tag(self.class_name, ("selected", "tags")), show=False)
+        for tag in available_group_tags:
+            dpg.delete_item(tag)
+        self.update_tag_selector()
+
     def create_window(self):
         with dpg.child_window(
                 tag=self.main_content_tag,
@@ -297,15 +436,17 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
             dpg.add_separator()
             with dpg.group(indent=25, width=dpg.get_item_width(self.main_parent_container)):
                 self.__create_media_fields()
+                file_dialog_tag = self._create_file_dialog_window()
 
                 with dpg.group(horizontal=True):
                     dpg.add_button(
                         label="Отменить",
                         callback=lambda: (
                             dpg.configure_item(self.main_content_tag, show=False),
-                            self.clear_fields(),
+                            self.clear_input_fields(),
                         )
                     )
+                    dpg.add_spacer(width=50)
                     dpg.add_button(
                         label="Очистить",
                         callback=lambda: dpg.configure_item(
@@ -321,8 +462,6 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
                         ),
                     )
 
-                    file_dialog_tag = self._create_file_dialog_window()
-
                     dpg.add_button(
                         label="Прикрепить файл",
                         callback=lambda: self.show_file_dialog(file_dialog_tag, self),
@@ -333,11 +472,8 @@ class ContentWindow(BaseAppWindow, NewContentWindowHandler):
                             message="Файл не добавлен!",
                             duration=3,
                             lvl=NotificationLevelEnum.DEFAULT,
-                        ) if not ContentWindow.MEDIA_FILE else self.save_media_info()
+                        ) if not ContentWindow.media_file else (self.save_media_info(), MainWindow.update_media_tree())
                     )
-
-    def create_del_media_window(self) -> None:
-        pass
 
     def create_update_media_window(self) -> None:
         pass

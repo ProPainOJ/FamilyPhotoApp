@@ -1,7 +1,7 @@
 from typing import Type, Iterable, Optional
 from uuid import UUID
 
-from sqlalchemy import select, Sequence
+from sqlalchemy import select, Sequence, update
 
 from .base_repository import ModelType
 from ..modals.modals import Media
@@ -48,3 +48,22 @@ class MediaRepository(BaseRepository[Media]):
 
     def get_one(self) -> Media | None:
         return self.session.execute(select(Media)).scalars().first()
+
+    def get_active(self) -> Sequence[Media]:
+        stmt = select(
+            Media
+        ).where(
+            Media.is_deleted.is_(False)
+        )
+        return self.session.execute(stmt).scalars().all()
+
+    def set_deleted(self, id: UUID) -> None:
+        stmt = update(
+            Media
+        ).where(
+            Media.id == id
+        ).values(
+            is_deleted=True
+        )
+        self.session.execute(stmt)
+        self.session.commit()

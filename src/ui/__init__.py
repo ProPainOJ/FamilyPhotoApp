@@ -10,9 +10,17 @@ from src.core.exceptions.application_exception import TagWindowError, NotImpleme
 MyIterType: TypeAlias = Union[list[str | LiteralString], tuple[str | LiteralString, ...]]
 
 
-class MainAppCallbackHandlerABC(ABC):
+class MainAppCallbackHandler:
     """Основной абстрактный класс для всех коллбек классов окон приложения."""
-    pass
+
+    @classmethod
+    def check_parent_instance_state(cls, attr_name: str = "_instance") -> bool:
+        """Проверка наличие ссылки на объект класса управления.
+
+        :param attr_name: Название атрибута
+        :return: Флаг наличие состояния
+        """
+        return True if hasattr(cls, attr_name) else False
 
 
 class MainAppABC(ABC):
@@ -93,7 +101,7 @@ class AppTagHelper:
                 msg="Тег с данным именем не создан!",
                 targets=[tag_target, cls.TAG_CONNECTOR.join(tag_name)],
                 pre_decision=f"Создать тег через: {cls.set_new_el_tag.__name__}",
-            )
+            ) from KeyError
 
     @classmethod
     def delete_tag(cls, tag_target: str, tag_name: str, del_obj_by_tag: bool = False) -> str:
@@ -103,13 +111,13 @@ class AppTagHelper:
         :param tag_name: Имя тега
         :param del_obj_by_tag: Удалить ли объект вместе с тегом
         """
-        if not tag_target in cls.WINDOW_ELEMENTS_TAG:
+        if tag_target not in cls.WINDOW_ELEMENTS_TAG:
             raise TagWindowError(
                 msg="Нет тегов у данного класса!",
                 targets=[str(key) for key in cls.WINDOW_ELEMENTS_TAG],
                 pre_decision=f"Создать первый тег для класса через {cls.set_new_el_tag.__name__}"
             )
-        if not tag_name in cls.WINDOW_ELEMENTS_TAG[tag_target]:
+        if tag_name not in cls.WINDOW_ELEMENTS_TAG[tag_target]:
             raise TagWindowError(
                 msg="Данный тег не создан!",
                 targets=[f"{tag_name}"]
@@ -147,9 +155,9 @@ class BaseAppWindow(MainAppABC, AppTagHelper):
 
     def __init_subclass__(cls, **kwargs):
         """Проверка, что класс имеет выделанный обработчик коллбеков."""
-        if not any(base_classes is MainAppCallbackHandlerABC for base_classes in cls.__mro__[1:-1]):
+        if not any(base_classes is MainAppCallbackHandler for base_classes in cls.__mro__[1:-1]):
             raise NotImplementClassError(
-                msg=f"Класс {cls.__name__} должен наследоваться от {MainAppCallbackHandlerABC.__name__}!",
+                msg=f"Класс {cls.__name__} должен наследоваться от {MainAppCallbackHandler.__name__}!",
                 targets=[cls.__name__],
                 pre_decision=f"Создайте класс {cls.__name__ + "CallbackHandler"}."
             )

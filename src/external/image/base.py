@@ -49,7 +49,7 @@ class ImageHandler:
             try:
                 pil_img = pil_img.convert(mode)
             except Exception as e:
-                raise ValueError(f"Ошибка конвертации {pil_img.mode} в {mode}: {str(e)}")
+                raise ValueError(f"Ошибка конвертации {pil_img.mode} в {mode}: {str(e)}") from None
 
         if show_image and AppConstEnum.DEBUG.value:
             pil_img.show()
@@ -111,7 +111,7 @@ class ImageHandler:
         try:
             resized_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         except Exception as e:
-            raise ValueError(f"Ошибка при изменении размера изображения: {str(e)}")
+            raise ValueError(f"Ошибка при изменении размера изображения: {str(e)}") from None
         return DearImage(
             data=resized_image,
             or_width=original_width,

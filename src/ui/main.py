@@ -6,10 +6,12 @@ from dearpygui.dearpygui import get_value
 
 from src import App
 from src import WinConstEnum as WCE
+from src.constants.types import DPGTag
 from src.core.base import MouseActionCallbackEnum
 from src.core.modals.modals import Media
+from src.core.repositories.media_repository import MediaRepository
 from src.core.services.media_service import MediaService
-from src.ui import BaseAppWindow, MainAppCallbackHandlerABC
+from src.ui import BaseAppWindow, MainAppCallbackHandler
 from src.ui.media import GetContentWindow
 
 POSITION = TypeVar('POSITION', int, float)
@@ -18,13 +20,56 @@ ElementName = TypeVar('ElementName', str, int)
 Point = tuple[POSITION, POSITION]
 
 
-class MainWindowEventHandler(MainAppCallbackHandlerABC):
+class MainWindowThemesHandler:
+    @staticmethod
+    def theme_delete_media_pop() -> DPGTag:
+        pass
+
+
+class MainWindowEventHandler(MainAppCallbackHandler):
+    _instance: "MainWindow"
+
+    @staticmethod
+    def set_deleted_media(sender, app_data, user_data: DPGTag):
+        """Сокрытие медиа-файла"""
+        media: Media = dpg.get_item_user_data(user_data)
+        MediaRepository().set_deleted(media.id)
+        dpg.delete_item(user_data)
+        popup = dpg.get_item_parent(sender)
+        dpg.delete_item(popup)
+        MainWindowEventHandler._instance.update_media_tree()
+
+    @staticmethod
+    def set_new_media_callback(sender, app_data, user_data) -> None:
+        """Отображение медиа в форме контента"""
+        main_content_container = BaseAppWindow.get_el_tag(
+            GetContentWindow.__name__,
+            BaseAppWindow.MAIN_CONTAINER_TAG_NAME,
+        )
+        show_status_cont_media: bool = dpg.is_item_shown(main_content_container)
+        user_data: Media = dpg.get_item_user_data(sender)
+
+        if GetContentWindow.CURRENT_MEDIA == user_data:
+            show_status_cont_media = not show_status_cont_media
+        else:
+            GetContentWindow.set_new_image(new_media=user_data)
+            show_status_cont_media = True
+
+        texture_resize_name = BaseAppWindow.get_el_tag(GetContentWindow.__name__, ("texture", "registry"))
+        MainWindowEventHandler._instance.app.run_resize_callback_by_name(texture_resize_name)
+
+        dpg.configure_item(
+            main_content_container,
+            show=show_status_cont_media,
+        )
+
     @classmethod
     def on_mouse_move_callback(cls, _instance: "MainWindow") -> None:
         if dpg.is_item_shown(_instance.sidebar_left_tag):
             active_window = dpg.get_active_window()
 
-            if 0 <= active_window <= 10 or _instance.new_line.dragging: return
+            if 0 <= active_window <= 10 or _instance.new_line.dragging:
+                return
 
             try:
                 item_type = dpg.get_item_type(active_window)
@@ -261,7 +306,7 @@ class InnerLineSeparation:
         return self.tag
 
 
-class MainWindow(BaseAppWindow, MainWindowEventHandler):
+class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler):
     FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
     UPPER_HEIGHT: int = None
 
@@ -286,6 +331,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         self._create_modal_win()
 
         self.__bind_main_window_themes()
+        MainWindowEventHandler._instance = self
 
     @staticmethod
     def _create_modal_win():
@@ -403,25 +449,6 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 callback=lambda: self.app.update_app_fps(get_value("slider_fps_tag")),
             )
 
-    def _set_new_media_callback(self, sender, app_data, user_data) -> None:
-        main_content_container = self.get_el_tag(GetContentWindow.__name__, self.MAIN_CONTAINER_TAG_NAME, )
-        show_status_cont_media: bool = dpg.get_item_configuration(main_content_container)["show"]
-        user_data: Media = dpg.get_item_user_data(sender)
-
-        if GetContentWindow.CURRENT_MEDIA == user_data:
-            show_status_cont_media = not show_status_cont_media
-        else:
-            GetContentWindow.set_new_image(new_media=user_data)
-            show_status_cont_media = True
-
-        texture_resize_name = self.get_el_tag(tag_target=GetContentWindow.__name__, tag_name=("texture", "registry"))
-        self.app.run_resize_callback_by_name(texture_resize_name)
-
-        dpg.configure_item(
-            main_content_container,
-            show=show_status_cont_media,
-        )
-
     def _resize_left_line_callback(self):
         self.resize_sidebar_callback(self)
         name = self.get_el_tag(tag_target="GetContentWindow", tag_name=("texture", "registry"))
@@ -526,9 +553,53 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
 
         return self.footer_tag
 
-    def create_sidebar(self) -> ElementName:
-        """Создание бокового окна приложения."""
+    @classmethod
+    def update_media_tree(cls):
+        """Обновление контента в боковой панели"""
+        sidebar_tree_tag = BaseAppWindow.get_el_tag(cls.__name__, "sidebar_left_tree")
+        all_medias = MediaService().get_active_media_files()
+        children: dict[int, list[int]] = dpg.get_item_children(sidebar_tree_tag)[1]
+        if children:
+            for child in children:
+                dpg.delete_item(child)
 
+        with dpg.group(horizontal=False, parent=sidebar_tree_tag):
+            for button_index, media in enumerate(all_medias):
+                btn_tag = dpg.add_button(
+                    label=media.name,
+                    callback=cls.set_new_media_callback,
+                    pos=(2, 26 * button_index),
+                    user_data=media,
+                )
+                with dpg.tooltip(parent=btn_tag, delay=.3, hide_on_activity=True):
+                    dpg.add_text("Нажмите `ПКМ` для опций")
+                with dpg.popup(
+                        parent=btn_tag,
+                        tag=f"modal_{btn_tag}",
+                        mousebutton=dpg.mvMouseButton_Right,
+                        modal=False,
+                        no_move=True,
+                ) as popup:
+                    dpg.add_button(
+                        label=f"Удалить {dpg.get_item_label(btn_tag)}",
+                        callback=cls.set_deleted_media,
+                        user_data=btn_tag,
+                        small=False,
+                    )
+                    dpg.configure_item(popup, min_size=[120, 25])
+
+    def _create_side_bar_media_tree(self) -> None:
+        """Создание окна с отображением дерева медиа-контента"""
+        with dpg.child_window(
+                tag=self.set_new_el_tag(self.class_name, "sidebar_left_tree"),
+                parent=self.sidebar_left_tag,
+                border=False,
+                show=True
+        ):
+            self.update_media_tree()
+
+    def create_sidebar(self) -> None:
+        """Создание бокового окна приложения"""
         with dpg.child_window(
                 tag=self.sidebar_left_tag,
                 label=self.sidebar_left_tag.rstrip("_" + self.app.TAG),
@@ -537,31 +608,10 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
                 width=self.SIDEBAR_WIDTH,
                 height=dpg.get_viewport_height() - (self.FOOTER_HEIGHT + self.UPPER_HEIGHT),
                 border=False,
-        ) as sidebar_tag:
-            medias = MediaService().get_weak_media_files()
-
-            with dpg.group(horizontal=False):
-                for button_index, media in enumerate(medias):
-                    btn_tag = dpg.add_button(
-                        label=media.name,
-                        callback=self._set_new_media_callback,
-                        pos=(2, 26 * button_index),
-                        user_data=media,
-                    )
-                    with dpg.popup(
-                            dpg.last_item(),
-                            tag=f"modal_{btn_tag}",
-                            mousebutton=dpg.mvMouseButton_Right,
-                            modal=False,
-                    ) as popup:
-                        dpg.add_button(label="Удалить", callback=lambda: (
-                            dpg.delete_item(btn_tag), dpg.configure_item(popup, show=False)))
-
-        self.app.insert_item_resize_callback(sidebar_tag, lambda: self._resize_left_line_callback())
-
+        ):
+            self._create_side_bar_media_tree()
+        self.app.insert_item_resize_callback(self.sidebar_left_tag, lambda: self._resize_left_line_callback())
         self._create_transfer_line()
-
-        return sidebar_tag
 
     def create_main_container(self) -> None:
         """Создание контейнера контента приложения."""
@@ -582,7 +632,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler):
         self.app.insert_item_resize_callback(self.container, lambda: self.resize_container_callback(self))
 
     def create_window(self) -> ElementName:
-        """Создание основного окна приложения."""
+        """Создание основного окна приложения"""
         with dpg.window(
                 tag=self.main_content_tag,
                 label="main",

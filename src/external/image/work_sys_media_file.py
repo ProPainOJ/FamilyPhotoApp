@@ -21,7 +21,7 @@ class WorkWithSystemMedia:
         return os.stat(file)
 
     @staticmethod
-    def create_media_file(path: Path | LiteralString | str) -> MediaFile | FileNotFoundError:
+    def create_media_file(path: Path | LiteralString | str) -> MediaFile:
         """Получаем информацию о файл из системы"""
         suffix: FileExtensionType | None = None
 
@@ -36,8 +36,10 @@ class WorkWithSystemMedia:
 
         if suffix is None:
             raise FileSuffixError(
-                msg=f"Выбрано недопустимое расширение файла!",
-                comment=f"Доступные расширения: {[str(suffix) for suffix in FileExtensionType]}"
+                msg="Выбрано недопустимое расширение файла!",
+                comment=f"Доступные расширения: {[str(suffix) for suffix in FileExtensionType]}",
+                targets=[real_suffix],
+                pre_decision=f"Расширить {FILE_EXTENSION}"
             )
 
         try:
@@ -56,4 +58,4 @@ class WorkWithSystemMedia:
                 data=blob,
             )
         except FileNotFoundError:
-            raise FileNotFoundError(f"Файл '{path}' не найдет! \nВозможно файл был удалён или перемешён!")
+            raise FileNotFoundError(f"Файл '{path}' не найдет! \nВозможно файл был удалён или перемешён!") from None
