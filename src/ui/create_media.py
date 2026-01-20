@@ -96,8 +96,6 @@ class NewContentWindowEventHandler(MainAppCallbackHandler):
         else:
             media_service.create_media(**new_media)
 
-        NewContentWindowEventHandler._instance.clear_input_fields()
-
     @staticmethod
     def close_clear_alert(alert_win: str, clear: bool) -> None:
         dpg.configure_item(alert_win, show=False)
@@ -472,7 +470,12 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
                             message="Файл не добавлен!",
                             duration=3,
                             lvl=NotificationLevelEnum.DEFAULT,
-                        ) if not ContentWindow.media_file else (self.save_media_info(), MainWindow.update_media_tree())
+                        ) if not ContentWindow.media_file else (
+                            dpg.configure_item(self.main_content_tag, show=False),
+                            self.save_media_info(),
+                            MainWindow.update_media_tree(),
+                            self.clear_input_fields(),
+                        )
                     )
 
     def create_update_media_window(self) -> None:

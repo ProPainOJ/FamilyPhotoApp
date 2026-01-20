@@ -22,6 +22,7 @@ class BaseRepository(Generic[ModelType]):
     def create(self, entity: ModelType) -> ModelType:
         self.session.add(entity)
         self.session.commit()
+        self.session.refresh(entity)
         return entity
 
     @abstractmethod

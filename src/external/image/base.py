@@ -70,8 +70,9 @@ class ImageHandler:
         )
 
     @staticmethod
-    def resize_image_keep_ratio(image_binary_data: bytes, resize_max_width: int = None, resize_max_height: int = None,
-                                target_width: int = None, target_height: int = None,
+    def resize_image_keep_ratio(image_binary_data: bytes, resize_max_width: int | None = None,
+                                resize_max_height: int | None = None, target_width: int | None = None,
+                                target_height: int | None = None,
                                 mode: FileExtensionType = FileExtensionType.PNG) -> DearImage:
         """Изменяет размер изображения с сохранением соотношения сторон.
 
@@ -106,7 +107,7 @@ class ImageHandler:
             new_height = min(resize_max_height, original_height)
             new_width = int((new_height / original_height) * original_width)
         else:
-            raise ValueError("Не указаны параметры изменения размера")
+            new_width, new_height = original_width, original_height
 
         try:
             resized_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)

@@ -62,16 +62,10 @@ class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler):
                     show=True,
                 )
                 return
-        left_sidebar_tag = AppTagHelper.get_el_tag(tag_target="MainWindow", tag_name="sidebar_left")
-        max_width = dpg.get_viewport_width() - dpg.get_item_width(left_sidebar_tag)
-        max_height = dpg.get_item_height(
-            AppTagHelper.get_el_tag(tag_target="MainWindow", tag_name="container")
-        )
-
         resized_image = ImageHandler.resize_image_keep_ratio(
             image_binary_data=new_media.data,
-            resize_max_width=max_width,
-            resize_max_height=max_height,
+            resize_max_width=None,
+            resize_max_height=None,
         )
         raw_image = ImageHandler.convert_bites_to_raw_list(
             dear_image=resized_image,
