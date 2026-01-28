@@ -13,41 +13,41 @@ from src.core.services.media_service import MediaService
 from src.core.services.tag_service import TagService
 from src.external.image.media_file import MediaFile
 from src.external.image.work_sys_media_file import FileExtensionType, WorkWithSystemMedia
-from src.ui import BaseAppWindow, MainAppCallbackHandler
+from src.ui import BaseAppWindow, BaseAppCallbackHandler, BaseAppThemeHandler
 from src.ui.main import MainWindow
 from src.ui.media import GetContentWindow
 from src.utils.position import get_element_pos, RectangularImageElement
 
 
-class NewContentWindowThemesHandler:
+class ContentWindowThemesHandler(BaseAppThemeHandler):
     @staticmethod
-    def rounded_btn_theme() -> DPGTag:
-        with dpg.theme() as rounded_btn_theme:
-            with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 15)
-        return rounded_btn_theme
+    def rounded_btn_theme() -> None:
+        with dpg.theme_component(dpg.mvButton):
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 15)
 
     @staticmethod
-    def error_text_input() -> DPGTag:
-        with dpg.theme() as error_text:
-            with dpg.theme_component(dpg.mvInputText):
-                dpg.add_theme_color(dpg.mvThemeCol_Text, ColorsEnum.RED.value.to_tuple())
-        return error_text
+    def error_text_input() -> None:
+        with dpg.theme_component(dpg.mvInputText):
+            dpg.add_theme_color(dpg.mvThemeCol_Text, ColorsEnum.RED.value.to_tuple())
 
     @staticmethod
-    def opacity_win_theme_tag() -> DPGTag:
-        with dpg.theme() as opacity_win_theme_tag:
-            with dpg.theme_component(dpg.mvChildWindow):
-                dpg.add_theme_color(
-                    dpg.mvThemeCol_ChildBg,
-                    value=ColorsEnum.TRANSPARENT.value.to_tuple(),
-                    category=dpg.mvThemeCat_Core,
-                )
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 15, category=dpg.mvThemeCat_Core)
-        return opacity_win_theme_tag
+    def opacity_win_theme_tag() -> None:
+        with dpg.theme_component(dpg.mvChildWindow):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_ChildBg,
+                value=ColorsEnum.TRANSPARENT.value.to_tuple(),
+                category=dpg.mvThemeCat_Core,
+            )
+            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 15, category=dpg.mvThemeCat_Core)
+
+    @staticmethod
+    def clear_field_alert() -> None:
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 1)
+            dpg.add_theme_color(dpg.mvThemeCol_Border, [255, 165, 0, 255], category=dpg.mvThemeCat_Core)
 
 
-class NewContentWindowEventHandler(MainAppCallbackHandler):
+class ContentWindowEventHandler(BaseAppCallbackHandler):
     """Обработка обратных вызовов"""
     _instance: "ContentWindow"
 
@@ -100,7 +100,7 @@ class NewContentWindowEventHandler(MainAppCallbackHandler):
     def close_clear_alert(alert_win: str, clear: bool) -> None:
         dpg.configure_item(alert_win, show=False)
         if clear:
-            NewContentWindowEventHandler.clear_input_fields()
+            ContentWindowEventHandler.clear_input_fields()
 
     @staticmethod
     def save_file_dialog(sender, app_data, user_data: "GetContentWindow") -> None:
@@ -115,13 +115,13 @@ class NewContentWindowEventHandler(MainAppCallbackHandler):
             try:
                 media_file = WorkWithSystemMedia.create_media_file(file_path)
             except FileNotFoundError:
-                NewContentWindowEventHandler._instance.app.create_notification(
+                ContentWindowEventHandler._instance.app.create_notification(
                     message="Файл был удалён или перемешен!",
                     duration=5,
                     lvl=NotificationLevelEnum.WARNING,
                 )
             except FileSuffixError as e:
-                NewContentWindowEventHandler._instance.app.create_notification(
+                ContentWindowEventHandler._instance.app.create_notification(
                     message=f"Неверный формат файла ({e.target[0]})!",
                     duration=5,
                     lvl=NotificationLevelEnum.WARNING,
@@ -132,7 +132,7 @@ class NewContentWindowEventHandler(MainAppCallbackHandler):
                     short_name = media_file.name[:file_name_len] + "..."
                 else:
                     short_name = media_file.name
-                NewContentWindowEventHandler._instance.app.create_notification(
+                ContentWindowEventHandler._instance.app.create_notification(
                     message=f"Файл `{short_name}` успешно выбран!",
                     duration=4,
                     lvl=NotificationLevelEnum.DEFAULT,
@@ -195,7 +195,8 @@ class NewContentWindowEventHandler(MainAppCallbackHandler):
         dpg.set_value(sender, ""),
 
 
-class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindowThemesHandler):
+class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowThemesHandler):
+    """Основное окно приложения"""
     TAG_ROW_WIDTH: Final[int] = 500
     media_file: MediaFile | None = None
     selected_tags: list[UUID] = []
@@ -205,17 +206,68 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
 
     def __init__(self, main_app: App) -> None:
         super().__init__(main_app=main_app, class_name=self.__class__.__name__)
-        NewContentWindowEventHandler._instance = self
+        ContentWindowEventHandler._instance = self
         self.current_row_width: int = 0
         self.selected_row_group, self.available_row_group = None, None
         self.main_parent_container = self.get_el_tag(tag_target="MainWindow", tag_name=("container",))
 
         self._create_clear_alert_window()
         self.create_window()
-        self.create_update_media_window()
+
+    def _create_clear_alert_window(self):
+        with dpg.window(
+                tag=self.set_new_el_tag(self.class_name, ("media", "clear")),
+                label="Очистить все поля?",
+                show=False,
+                no_scrollbar=True,
+                no_resize=True,
+                no_scroll_with_mouse=True,
+                modal=True,
+                no_close=True,
+                no_title_bar=True,
+                height=120,
+                width=424,
+        ) as alert_win:
+            dpg.add_text("Все поля для ввода будут очищены!", indent=100)
+            dpg.add_spacer()
+            dpg.add_text("Теги будут сохранены, но поля для ввода очищены.\n Продолжить операцию?")
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="OK",
+                    width=200,
+                    callback=lambda: self.close_clear_alert(alert_win, True),
+                )
+                dpg.add_button(
+                    label="Cancel",
+                    width=200,
+                    callback=lambda: self.close_clear_alert(alert_win, False),
+                )
+
+        self.set_theme(alert_win, self.clear_field_alert)
+
+    def _create_file_dialog_window(self) -> DPGTag:
+        """Создание модального окна для выбора файла"""
+        with dpg.file_dialog(
+                tag=self.set_new_el_tag(self.class_name, ("file", "dialog")),
+                directory_selector=False,
+                callback=self.save_file_dialog,
+                file_count=0,
+                modal=True,
+                show=False,
+                width=self.app.MIN_WIDTH,
+                height=self.app.MIN_HEIGHT,
+                min_size=(self.app.MIN_WIDTH, self.app.MIN_HEIGHT),
+                user_data=self,
+                cancel_callback=lambda: setattr(App, "CUSTOM_SIDEBAR_LINE_ACTIVE", True)
+        ) as file_dialog_tag:
+            dpg.add_file_extension(".*")
+            for extension in FileExtensionType:
+                dpg.add_file_extension(f".{extension}")
+        self.app.insert_item_resize_callback(callback_name=file_dialog_tag, new_callback=self.resize_file_dialog)
+        return file_dialog_tag
 
     def update_tag_selector(self, new_tag: Tag | None = None) -> None:
-        """Обновление списка доступных тегов медиа-файла.
+        """Обновление списка доступных тегов медиа-файла
 
         :param new_tag: Теги добавленные пользователем вручную.
         """
@@ -263,14 +315,8 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
             )
             dpg.configure_item(selected_tag, user_data=available_tag)
 
-            dpg.bind_item_theme(
-                selected_tag,
-                self.rounded_btn_theme()
-            )
-            dpg.bind_item_theme(
-                available_tag,
-                self.rounded_btn_theme(),
-            )
+            self.set_theme(selected_tag, self.rounded_btn_theme)
+            self.set_theme(available_tag, self.rounded_btn_theme)
 
     def __create_media_fields(self) -> None:
         """Создание полей для ввода данных медиа-файла"""
@@ -297,7 +343,7 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
         )
 
         dpg.add_spacer(height=5)
-        dpg.bind_item_theme(
+        self.set_theme(
             dpg.add_child_window(
                 tag=self.set_new_el_tag(self.class_name, ("selected", "tags")),
                 height=80,
@@ -306,12 +352,12 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
                 horizontal_scrollbar=False,
                 show=False,
             ),
-            self.opacity_win_theme_tag()
+            self.opacity_win_theme_tag
         )
 
         non_sel_tag = self.set_new_el_tag(self.class_name, ("available", "tags"))
         dpg.add_text("Доступные теги: ")
-        dpg.bind_item_theme(
+        self.set_theme(
             dpg.add_child_window(
                 tag=non_sel_tag,
                 height=80,
@@ -320,7 +366,7 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
                 horizontal_scrollbar=False,
                 show=False,
             ),
-            self.opacity_win_theme_tag()
+            self.opacity_win_theme_tag
         )
 
         with dpg.group(horizontal=True):
@@ -343,64 +389,6 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
 
         self.update_tag_selector()
 
-    def _create_clear_alert_window(self):
-        with dpg.window(
-                tag=self.set_new_el_tag(self.class_name, ("media", "clear")),
-                label="Очистить все поля?",
-                show=False,
-                no_scrollbar=True,
-                no_resize=True,
-                no_scroll_with_mouse=True,
-                modal=True,
-                no_close=True,
-                no_title_bar=True,
-                height=120,
-                width=424,
-        ) as alert_win:
-            dpg.add_text("Все поля для ввода будут очищены!", indent=100)
-            dpg.add_spacer()
-            dpg.add_text("Теги будут сохранены, но поля для ввода очищены.\n Продолжить операцию?")
-            with dpg.group(horizontal=True):
-                dpg.add_button(
-                    label="OK",
-                    width=200,
-                    callback=lambda: self.close_clear_alert(alert_win, True),
-                )
-                dpg.add_button(
-                    label="Cancel",
-                    width=200,
-                    callback=lambda: self.close_clear_alert(alert_win, False),
-                )
-
-        with dpg.theme() as item_theme:
-            with dpg.theme_component(dpg.mvWindowAppItem):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 1)
-                dpg.add_theme_color(dpg.mvThemeCol_Border, [255, 165, 0, 255], category=dpg.mvThemeCat_Core)
-        dpg.bind_item_theme(alert_win, item_theme)
-
-    def _create_file_dialog_window(self) -> DPGTag:
-        """Создание модального окна для выбора файла"""
-        with dpg.file_dialog(
-                tag=self.set_new_el_tag(self.class_name, ("file", "dialog")),
-                directory_selector=False,
-                callback=self.save_file_dialog,
-                file_count=0,
-                modal=True,
-                show=False,
-                width=self.app.MIN_WIDTH,
-                height=self.app.MIN_HEIGHT,
-                min_size=(self.app.MIN_WIDTH, self.app.MIN_HEIGHT),
-                user_data=self,
-                cancel_callback=lambda: setattr(App, "CUSTOM_SIDEBAR_LINE_ACTIVE", True)
-
-        ) as file_dialog_tag:
-            dpg.add_file_extension(".*")
-            for extension in FileExtensionType:
-                dpg.add_file_extension(f".{extension}")
-
-        self.app.insert_item_resize_callback(callback_name=file_dialog_tag, new_callback=self.resize_file_dialog)
-        return file_dialog_tag
-
     def clear_input_fields(self) -> None:
         """Полная очистка при выходе из формы создания"""
         super().clear_input_fields()
@@ -422,6 +410,7 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
         self.update_tag_selector()
 
     def create_window(self):
+        """Создание основного контейнера для контента приложения"""
         with dpg.child_window(
                 tag=self.main_content_tag,
                 parent=self.main_parent_container,
@@ -477,6 +466,3 @@ class ContentWindow(BaseAppWindow, NewContentWindowEventHandler, NewContentWindo
                             self.clear_input_fields(),
                         )
                     )
-
-    def create_update_media_window(self) -> None:
-        pass

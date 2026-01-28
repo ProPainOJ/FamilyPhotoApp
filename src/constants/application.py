@@ -1,6 +1,15 @@
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import LiteralString
+from typing import LiteralString, Final
+
+
+@dataclass(frozen=True)
+class ApplicationContentContainers:
+    """Основные контент-окна приложения"""
+    MAIN: Final[str] = field(default="main")
+    FOOTER: Final[str] = field(default="footer")
+    UPPER: Final[str] = field(default="upper")
+    SIDEBAR: Final[str] = field(default="sidebar")
 
 
 @dataclass(frozen=True)

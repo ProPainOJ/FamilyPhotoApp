@@ -1,32 +1,115 @@
 import math
-from typing import Optional, TypeVar
+from dataclasses import fields
+from typing import Optional, Final
 
 import dearpygui.dearpygui as dpg
 from dearpygui.dearpygui import get_value
 
 from src import App
 from src import WinConstEnum as WCE
-from src.constants.types import DPGTag
+from src.constants.application import ApplicationContentContainers
+from src.constants.types import DPGTag, Point, ElementName
 from src.core.base import MouseActionCallbackEnum
 from src.core.modals.modals import Media
 from src.core.repositories.media_repository import MediaRepository
 from src.core.services.media_service import MediaService
-from src.ui import BaseAppWindow, MainAppCallbackHandler
+from src.ui import BaseAppWindow, BaseAppCallbackHandler, BaseAppThemeHandler
 from src.ui.media import GetContentWindow
 
-POSITION = TypeVar('POSITION', int, float)
-ElementName = TypeVar('ElementName', str, int)
 
-Point = tuple[POSITION, POSITION]
+class WindowContentController:
+    """Простое управление отображения контента основных окон приложения"""
+    child_window_type: Final[str] = "mvChildWindow"
+    window_data: dict[str, DPGTag] = {
+        container.default: None
+        for container in fields(ApplicationContentContainers)
+    }
+
+    def __init__(self, main_control_tag: DPGTag, sidebar_control_tag: DPGTag, upper_control_tag: DPGTag,
+                 footer_control_tag: DPGTag) -> None:
+        """
+        :param main_control_tag:
+        :param sidebar_control_tag:
+        :param upper_control_tag:
+        :param footer_control_tag:
+        """
+        self.main_control = main_control_tag
+        self.sidebar_control = sidebar_control_tag
+        self.upper_control = upper_control_tag
+        self.footer_control = footer_control_tag
+        WindowContentController.window_data['main'] = self.main_control
+        WindowContentController.window_data['sidebar'] = self.sidebar_control
+        WindowContentController.window_data['upper'] = self.upper_control
+        WindowContentController.window_data['footer'] = self.footer_control
+
+    @staticmethod
+    def _hide_children(content_containers: list[DPGTag] | DPGTag, children_type: str | None = None) -> int:
+        """Сокрытие всех детей, по типу элемента
+
+        :param content_containers: Элементы для сокрытия
+        :param children_type: Тип элемента (default=None/Все)
+        :return: Количество элементов сокрытия
+        """
+        count_of_hidden_children = 0
+        for container in content_containers:
+            if children_type is not None:
+                if WindowContentController.child_window_type in dpg.get_item_type(container):
+                    dpg.configure_item(container, show=False)
+                    count_of_hidden_children += 1
+            else:
+                dpg.configure_item(container, show=False)
+                count_of_hidden_children += 1
+        return count_of_hidden_children
+
+    @staticmethod
+    def hide_all_content() -> None:
+        """Сокрытие всех окон-наследников, основных контейнеров контента приложения"""
+        for short_name, window_tag in WindowContentController.window_data.items():
+            container_children = dpg.get_item_children(window_tag)[1]
+            count_of_hidden = WindowContentController._hide_children(container_children)
+            if App.DEBUG_STATUS:
+                print(f"INFO: Сокрытие всех окон {short_name} ({count_of_hidden} шт.)")
+
+    @staticmethod
+    def hide_container_content(content_type: str, hidden_type: str | None) -> None:
+        """Сокрытие элементов контент контейнеров.
+
+        :param content_type: Контейнер для сокрытия (ApplicationContentContainers/WindowContentController.window_data)
+        :param hidden_type: Тип сокрытия дочерних элементов (WindowContentController.child_window_type)
+        """
+        WindowContentController._hide_children(
+            content_containers=dpg.get_item_children(WindowContentController.window_data[content_type])[1],
+            children_type=hidden_type,
+        )
 
 
-class MainWindowThemesHandler:
+class MainWindowThemesHandler(BaseAppThemeHandler):
     @staticmethod
     def theme_delete_media_pop() -> DPGTag:
         pass
 
+    @staticmethod
+    def theme_main_container() -> None:
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0, category=dpg.mvThemeCat_Core)
 
-class MainWindowEventHandler(MainAppCallbackHandler):
+        with dpg.theme_component(dpg.mvMenu):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 5, 5, category=dpg.mvThemeCat_Core)
+
+    @staticmethod
+    def theme_footer() -> None:
+        with dpg.theme_component(dpg.mvAll):
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (125, 0, 255, 255), category=dpg.mvThemeCat_Core)
+        with dpg.theme_component(dpg.mvPlatform_Windows):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
+
+    @staticmethod
+    def theme_main_app_container() -> None:
+        with dpg.theme_component(dpg.mvAll):
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (125, 0, 12, 135), category=dpg.mvThemeCat_Core)
+
+
+class MainWindowEventHandler(BaseAppCallbackHandler):
     _instance: "MainWindow"
 
     @staticmethod
@@ -41,7 +124,7 @@ class MainWindowEventHandler(MainAppCallbackHandler):
 
     @staticmethod
     def set_new_media_callback(sender, app_data, user_data) -> None:
-        """Отображение медиа в форме контента"""
+        """Отображение медиа в форме пользовательского контента"""
         main_content_container = BaseAppWindow.get_el_tag(
             GetContentWindow.__name__,
             BaseAppWindow.MAIN_CONTAINER_TAG_NAME,
@@ -164,12 +247,24 @@ class MainWindowEventHandler(MainAppCallbackHandler):
         dpg.set_item_pos(_instance.footer_tag, [0, dpg.get_viewport_height() - _instance.FOOTER_HEIGHT])
 
     @classmethod
-    def resize_sidebar_callback(cls, _instance: "MainWindow") -> None:
+    def resize_sidebar_callback(cls) -> None:
+        """Изменение конфигурации бокового окна приложения и связных элементов"""
         dpg.configure_item(
-            _instance.sidebar_left_tag,
-            width=_instance.SIDEBAR_WIDTH,
-            height=dpg.get_viewport_height() - (_instance.FOOTER_HEIGHT + _instance.UPPER_HEIGHT),
+            cls._instance.sidebar_left_tag,
+            width=cls._instance.SIDEBAR_WIDTH,
+            height=dpg.get_viewport_height() - (cls._instance.FOOTER_HEIGHT + cls._instance.UPPER_HEIGHT),
         )
+        media_container_tag = cls._instance.get_el_tag(tag_target="GetContentWindow", tag_name=("texture", "registry"))
+        cls._instance.app.run_resize_callback_by_name(media_container_tag)
+
+    @classmethod
+    def set_resize_media_btn(cls, btn_tag: str) -> None:
+        def config_tree_element() -> None:
+            side_bar_name = cls._instance.get_el_tag(MainWindow.__name__, "sidebar_left")
+            width = dpg.get_item_width(side_bar_name) // 2
+            dpg.configure_item(btn_tag, width=width)
+
+        cls._instance.app.insert_item_resize_callback(f"media_{btn_tag}", config_tree_element)
 
     @classmethod
     def resize_container_callback(cls, _instance: "MainWindow") -> None:
@@ -306,12 +401,12 @@ class InnerLineSeparation:
         return self.tag
 
 
-class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler):
-    FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
-    UPPER_HEIGHT: int = None
+class MainWindow(BaseAppWindow, WindowContentController, MainWindowEventHandler, MainWindowThemesHandler):
+    """Базовое окно со связанными мелкими окнами приложения"""
 
     def __init__(self, main_app: App) -> None:
-        """Реализация основных элементов-контейнеров приложения."""
+        """Реализация основных элементов-контейнеров приложения"""
+        MainWindowEventHandler._instance = self
         super().__init__(main_app, self.__class__.__name__)
 
         self.WINDOW_NAME = self.__class__.__name__
@@ -330,8 +425,9 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
         self._create_setting_window()
         self._create_modal_win()
 
-        self.__bind_main_window_themes()
-        MainWindowEventHandler._instance = self
+        WindowContentController.__init__(self=self, main_control_tag=self.container,
+                                         sidebar_control_tag=self.sidebar_left_tag, upper_control_tag=self.upper_tag,
+                                         footer_control_tag=self.footer_tag)
 
     @staticmethod
     def _create_modal_win():
@@ -349,33 +445,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 dpg.add_button(label="OK", width=75, callback=lambda: dpg.configure_item(window, show=False))
                 dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item(window, show=False))
 
-    def __bind_main_window_themes(self) -> None:
-        """Применение шаблонов для элементов основного окна."""
-
-        with dpg.theme() as main_tag:
-            with dpg.theme_component(dpg.mvWindowAppItem):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0, category=dpg.mvThemeCat_Core)
-
-            with dpg.theme_component(dpg.mvMenu):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 5, 5, category=dpg.mvThemeCat_Core)
-
-        dpg.bind_item_theme(self.main_content_tag, main_tag)
-
-        with dpg.theme() as main_footer_theme_tag:
-            with dpg.theme_component(dpg.mvAll):
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (125, 0, 255, 255), category=dpg.mvThemeCat_Core)
-            with dpg.theme_component(dpg.mvPlatform_Windows):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
-
-        dpg.bind_item_theme(self.footer_tag, main_footer_theme_tag)
-
-        with dpg.theme() as main_container_theme_tag:
-            with dpg.theme_component(dpg.mvAll):
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (125, 0, 12, 135), category=dpg.mvThemeCat_Core)
-
-        dpg.bind_item_theme(self.container, main_container_theme_tag)
-
-    def _create_transfer_line(self) -> Optional[ElementName]:
+    def _create_transfer_line(self) -> None:
         with dpg.viewport_drawlist() as viewport_drawlist:
             start_line_position: tuple[Point, Point] = (
                 (self.SIDEBAR_WIDTH, self.UPPER_HEIGHT + 2),
@@ -414,8 +484,6 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
 
         self.app.insert_item_resize_callback(self.line_tag, lambda: self.resize_transfer_line_callback(self))
 
-        return
-
     def _create_setting_window(self) -> None:
         """Реализация окна с настройками приложения."""
         with dpg.window(
@@ -449,10 +517,16 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 callback=lambda: self.app.update_app_fps(get_value("slider_fps_tag")),
             )
 
-    def _resize_left_line_callback(self):
-        self.resize_sidebar_callback(self)
-        name = self.get_el_tag(tag_target="GetContentWindow", tag_name=("texture", "registry"))
-        self.app.run_resize_callback_by_name(name)
+    def _create_side_bar_media_tree(self) -> None:
+        """Создание окна с отображением дерева медиа-контента"""
+        with dpg.child_window(
+                tag=self.set_new_el_tag(self.class_name, "sidebar_left_tree"),
+                parent=self.sidebar_left_tag,
+                border=False,
+                show=True
+        ):
+            pass
+        self.update_media_tree()
 
     def create_upper(self) -> str | int:
         """Создание верхнего меню приложения."""
@@ -463,6 +537,11 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 parent=self.main_content_tag,
         ) as upper_menu:
             with dpg.menu(label="Меню"):
+                dpg.add_menu_item(
+                    label="Закрыть всё",
+                    callback=lambda: self.hide_container_content(ApplicationContentContainers.MAIN,
+                                                                 self.child_window_type),
+                )
                 dpg.add_menu_item(
                     label="Панель метрик",
                     callback=lambda: self.hide_footer_callback(self),
@@ -550,6 +629,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 dpg.add_text(tag="cpu_data_tag", default_value="CPU:---")
 
         self.app.insert_item_resize_callback(self.footer_tag, lambda: self.resize_footer_callback(self))
+        self.set_theme(self.footer_tag, self.theme_footer)
 
         return self.footer_tag
 
@@ -557,14 +637,14 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
     def update_media_tree(cls):
         """Обновление контента в боковой панели"""
         sidebar_tree_tag = BaseAppWindow.get_el_tag(cls.__name__, "sidebar_left_tree")
-        all_medias = MediaService().get_active_media_files()
+        active_medias = MediaService().get_active_media_files()
         children: dict[int, list[int]] = dpg.get_item_children(sidebar_tree_tag)[1]
         if children:
             for child in children:
                 dpg.delete_item(child)
 
         with dpg.group(horizontal=False, parent=sidebar_tree_tag):
-            for button_index, media in enumerate(all_medias):
+            for button_index, media in enumerate(active_medias):
                 btn_tag = dpg.add_button(
                     label=media.name,
                     callback=cls.set_new_media_callback,
@@ -587,16 +667,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                         small=False,
                     )
                     dpg.configure_item(popup, min_size=[120, 25])
-
-    def _create_side_bar_media_tree(self) -> None:
-        """Создание окна с отображением дерева медиа-контента"""
-        with dpg.child_window(
-                tag=self.set_new_el_tag(self.class_name, "sidebar_left_tree"),
-                parent=self.sidebar_left_tag,
-                border=False,
-                show=True
-        ):
-            self.update_media_tree()
+                cls.set_resize_media_btn(btn_tag)
 
     def create_sidebar(self) -> None:
         """Создание бокового окна приложения"""
@@ -610,7 +681,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 border=False,
         ):
             self._create_side_bar_media_tree()
-        self.app.insert_item_resize_callback(self.sidebar_left_tag, lambda: self._resize_left_line_callback())
+        self.app.insert_item_resize_callback(self.sidebar_left_tag, self.resize_sidebar_callback)
         self._create_transfer_line()
 
     def create_main_container(self) -> None:
@@ -629,6 +700,7 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
                 height=dpg.get_viewport_height() - (self.FOOTER_HEIGHT + self.UPPER_HEIGHT),
         ):
             pass
+        self.set_theme(self.container, self.theme_main_app_container)
         self.app.insert_item_resize_callback(self.container, lambda: self.resize_container_callback(self))
 
     def create_window(self) -> ElementName:
@@ -649,4 +721,5 @@ class MainWindow(BaseAppWindow, MainWindowEventHandler, MainWindowThemesHandler)
         ) as main_window:
             self.app.set_primary_window(main_window)
 
-            return main_window
+        self.set_theme(main_window, self.theme_main_container)
+        return main_window

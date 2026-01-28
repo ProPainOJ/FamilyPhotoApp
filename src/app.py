@@ -1,7 +1,7 @@
 import dearpygui.dearpygui as dpg
 
 from core.base import App
-from src.ui.create_media import ContentWindow
+from src.ui.content import ContentWindow
 from src.ui.main import MainWindow
 from src.ui.media import GetContentWindow
 

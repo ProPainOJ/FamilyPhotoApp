@@ -1,17 +1,58 @@
 from abc import ABC, abstractmethod
-from typing import LiteralString, TypeAlias, Union
+from collections.abc import Callable
+from typing import LiteralString, TypeAlias, Union, Final
 
 import dearpygui.dearpygui as dpg
 
 from src import App
 from src import WinConstEnum as WCE
+from src.constants.types import DPGTag
 from src.core.exceptions.application_exception import TagWindowError, NotImplementClassError
 
 MyIterType: TypeAlias = Union[list[str | LiteralString], tuple[str | LiteralString, ...]]
 
 
-class MainAppCallbackHandler:
-    """Основной абстрактный класс для всех коллбек классов окон приложения."""
+class BaseAppThemeHandler:
+    """Основной класс для всех тем-классов окон приложения"""
+
+    _cache: dict[DPGTag, DPGTag] = {}
+
+    @classmethod
+    def create_theme(cls, theme_func: Callable) -> DPGTag:
+        """Создает или возвращает кэшированную тему по тегу"""
+        tag = theme_func.__name__
+
+        if tag in cls._cache:
+            return cls._cache[tag]
+
+        with dpg.theme(tag=tag) as created_tag:
+            theme_func()
+
+        cls._cache[tag] = created_tag
+        return created_tag
+
+    @classmethod
+    def set_theme(cls, app_element: DPGTag | None, theme_func: Callable) -> None:
+        """Применение темы к элементу приложения
+
+        :param app_element: Элемент приложения к которой применяется тема
+        :param theme_func: Функция определения компонент-темы
+        """
+        if app_element is None:
+            app_element = dpg.last_item()
+        dpg.bind_item_theme(app_element, cls.create_theme(theme_func))
+
+    @classmethod
+    def clear_theme_cache(cls) -> None:
+        """Удаление всего кеша тем приложения"""
+        for theme_tag in cls._cache:
+            dpg.delete_item(theme_tag)
+            dpg.remove_alias(theme_tag)
+        cls._cache = {}
+
+
+class BaseAppCallbackHandler:
+    """Основной класс для всех коллбек классов окон приложения"""
 
     @classmethod
     def check_parent_instance_state(cls, attr_name: str = "_instance") -> bool:
@@ -150,17 +191,15 @@ class AppTagHelper:
 
 class BaseAppWindow(MainAppABC, AppTagHelper):
     """Базовый класс для создания UI приложения."""
-    MAIN_CONTAINER_TAG_NAME = ("main", "content", "container")
+    MAIN_CONTAINER_TAG_NAME: Final[str] = ("main", "content", "container")
     SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value
+    FOOTER_HEIGHT: int = 0 if not WCE.SHOW_FOOTER.value else WCE.FOOTER_HEIGHT.value
+    UPPER_HEIGHT: int = None
 
     def __init_subclass__(cls, **kwargs):
         """Проверка, что класс имеет выделанный обработчик коллбеков."""
-        if not any(base_classes is MainAppCallbackHandler for base_classes in cls.__mro__[1:-1]):
-            raise NotImplementClassError(
-                msg=f"Класс {cls.__name__} должен наследоваться от {MainAppCallbackHandler.__name__}!",
-                targets=[cls.__name__],
-                pre_decision=f"Создайте класс {cls.__name__ + "CallbackHandler"}."
-            )
+        cls.__check_subclasses(BaseAppThemeHandler)
+        cls.__check_subclasses(BaseAppCallbackHandler)
         super().__init_subclass__(**kwargs)
 
     def __init__(self, main_app: App, class_name: str) -> None:
@@ -172,6 +211,16 @@ class BaseAppWindow(MainAppABC, AppTagHelper):
         self.app = main_app
         self.class_name = class_name
         self.main_content_tag = self.set_new_el_tag(self.class_name, self.MAIN_CONTAINER_TAG_NAME)
+
+    @classmethod
+    def __check_subclasses(cls, subclass: type[BaseAppThemeHandler] | type[BaseAppCallbackHandler]) -> None:
+        """Проверка на наличие созданного обработчика у класса наследника `BaseAppWindow`"""
+        if not any(base_classes is subclass for base_classes in cls.__mro__[1:-1]):
+            raise NotImplementClassError(
+                msg=f"Класс {cls.__name__} должен наследоваться от {subclass.__name__}!",
+                targets=[cls.__name__],
+                pre_decision=f"Создайте класс, наследованный от {subclass.__name__}."
+            )
 
     def create_window(self):
         ...

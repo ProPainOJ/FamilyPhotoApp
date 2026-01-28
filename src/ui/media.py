@@ -1,5 +1,5 @@
 import os
-from typing import TypeAlias, Final
+from typing import Final
 from uuid import uuid4
 
 import dearpygui.dearpygui as dpg
@@ -7,21 +7,25 @@ import dearpygui.dearpygui as dpg
 import src.utils.dir as dir_utils
 import src.utils.position as pos_utils
 from src import App
+from src.constants.types import DPGTag
 from src.core.modals.modals import Media
 from src.core.services.media_service import MediaService
 from src.external.image.base import ImageHandler, DearImage
-from src.ui import BaseAppWindow, AppTagHelper, MainAppCallbackHandler
-
-TagName: TypeAlias = str | int
+from src.ui import BaseAppWindow, AppTagHelper, BaseAppCallbackHandler, BaseAppThemeHandler
 
 
-class GetContentWindowEventHandler(MainAppCallbackHandler):
+class GetContentWindowThemeHandler(BaseAppThemeHandler):
     pass
 
 
-class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler):
+class GetContentWindowEventHandler(BaseAppCallbackHandler):
+    pass
+
+
+class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler, GetContentWindowThemeHandler):
+    """Класс для работы с контентом приложения"""
     CURRENT_MEDIA: Media | None = None
-    CREATED_MEDIA: set[TagName] = {}
+    CREATED_MEDIA: set[DPGTag] = {}
     MIN_MEDIA_CONTENT_WIDTH: Final[int] = 570
     MIN_MEDIA_CONTENT_HEIGHT: Final[int] = 438
 

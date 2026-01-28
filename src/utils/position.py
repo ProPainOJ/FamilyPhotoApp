@@ -90,18 +90,18 @@ class RectangularImageElement(Quadrilateral):
             self.pos = Rectangle(lu_pos, rd_pos)
         else:
             if (
-                    self.pos.left_up_point.x > self.pos.right_down_point.x or
-                    self.pos.left_up_point.y < self.pos.right_down_point.y
+                    self.pos.left_up_point.x > self.pos.right_down_point.x
+                    or self.pos.left_up_point.y < self.pos.right_down_point.y
             ):
                 raise ArgValueError(
                     msg="Прямоугольник не правильный!",
                     comment="Координаты должны образовывать корректный прямоугольник.",
-                    targets=[self.pos.left_up_point, self.pos.right_down_point, 12.4, ],
+                    targets=[self.pos.left_up_point, self.pos.right_down_point, 12.4],
                     pre_decision=f"Укажите {self.pos.left_up_point} левее {self.pos.right_down_point}",
                 )
             elif (
-                    self.pos.left_up_point.x + self.pos.right_down_point.x > self.wrap_width or
-                    self.pos.left_up_point.y + self.pos.right_down_point.y > self.wrap_height
+                    self.pos.left_up_point.x + self.pos.right_down_point.x > self.wrap_width
+                    or self.pos.left_up_point.y + self.pos.right_down_point.y > self.wrap_height
             ):
                 raise ArgValueError(
                     msg="Координаты углов не соответствуют длине и ширине прямоугольника!",
@@ -129,10 +129,7 @@ class RectangularImageElement(Quadrilateral):
 
 
 def get_element_pos(
-        el_settings: RectangularImageElement,
-        perc_padding: Float0To1 = 0.5,
-        left_padding: int = 0,
-        top_padding: int = 0,
+        el_settings: RectangularImageElement, perc_padding: Float0To1 = 0.5, left_padding: int = 0, top_padding: int = 0
 ) -> PointCoordinate:
     """Получение позиции элемента в окне.
 
@@ -142,7 +139,7 @@ def get_element_pos(
     :param top_padding: Верхний отступ
 
     :return: Позиция элемента
-    """
+    """  # noqa: E501
     args = (left_padding, top_padding)
 
     if any(args):
