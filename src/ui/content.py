@@ -16,6 +16,7 @@ from src.external.image.work_sys_media_file import FileExtensionType, WorkWithSy
 from src.ui import BaseAppWindow, BaseAppCallbackHandler, BaseAppThemeHandler
 from src.ui.main import MainWindow
 from src.ui.media import GetContentWindow
+from src.ui.person import PersonContent
 from src.utils.position import get_element_pos, RectangularImageElement
 
 
@@ -213,6 +214,7 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
 
         self._create_clear_alert_window()
         self.create_window()
+        self.create_children_windows()
 
     def _create_clear_alert_window(self):
         with dpg.window(
@@ -466,3 +468,6 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
                             self.clear_input_fields(),
                         )
                     )
+
+    def create_children_windows(self):
+        PersonContent(self).create_window()
