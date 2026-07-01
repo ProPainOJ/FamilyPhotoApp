@@ -6,6 +6,7 @@ class FileExtensionType(StrEnum):
     JPEG = "jpeg"
     JPG = "jpg"
     HEIC = "heic"
+    MP4 = "mp4"
 
 
 FILE_EXTENSION: dict[str, FileExtensionType] = {
@@ -13,6 +14,7 @@ FILE_EXTENSION: dict[str, FileExtensionType] = {
     "jpeg": FileExtensionType.JPEG,
     "jpg": FileExtensionType.JPG,
     "heic": FileExtensionType.HEIC,
+    "mp4": FileExtensionType.MP4,
 }
 
 

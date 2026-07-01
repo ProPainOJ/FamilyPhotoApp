@@ -9,9 +9,11 @@ if __name__ == "__main__":
     dpg.create_context()
 
     main_app = App()
+
     MainWindow(main_app)
     ContentWindow(main_app)
     GetContentWindow(main_app)
+
     dpg.setup_dearpygui()
     dpg.show_viewport()
 

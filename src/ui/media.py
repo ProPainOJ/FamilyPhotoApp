@@ -49,7 +49,7 @@ class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler, GetContentWi
         new_image_tag = "_".join((start_tag, new_media.id.__str__()))
         old_image_tag = "_".join((start_tag, GetContentWindow.CURRENT_MEDIA.id.__str__()))
 
-        if old_image_tag in AppTagHelper.WINDOW_ELEMENTS_TAG[GetContentWindow.__name__]:
+        if old_image_tag in AppTagHelper._window_elements_tag[GetContentWindow.__name__]:
             current_image_tag = AppTagHelper.get_el_tag(
                 GetContentWindow.__name__,
                 old_image_tag,
@@ -59,7 +59,7 @@ class GetContentWindow(BaseAppWindow, GetContentWindowEventHandler, GetContentWi
                 show=False,
             )
             GetContentWindow.CURRENT_MEDIA = new_media
-            if new_image_tag in AppTagHelper.WINDOW_ELEMENTS_TAG[GetContentWindow.__name__]:
+            if new_image_tag in AppTagHelper._window_elements_tag[GetContentWindow.__name__]:
                 show_tag = AppTagHelper.get_el_tag(GetContentWindow.__name__, new_image_tag)
                 dpg.configure_item(
                     show_tag,

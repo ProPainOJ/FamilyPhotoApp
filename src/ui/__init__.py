@@ -1,15 +1,13 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import LiteralString, TypeAlias, Union, Final
+from typing import Final
 
 import dearpygui.dearpygui as dpg
 
 from src import App
 from src import WinConstEnum as WCE
-from src.constants.types import DPGTag
+from src.constants.types import DPGTag, MyIterType
 from src.core.exceptions.application_exception import TagWindowError, NotImplementClassError
-
-MyIterType: TypeAlias = Union[list[str | LiteralString], tuple[str | LiteralString, ...]]
 
 
 class BaseAppThemeHandler:
@@ -64,18 +62,24 @@ class BaseAppCallbackHandler:
         return True if hasattr(cls, attr_name) else False
 
 
-class MainAppABC(ABC):
+class AppWindowABC(ABC):
     """Основной абстрактный класс для всех окон приложения."""
 
     @abstractmethod
     def create_window(self):
+        """Создание основного фрейма приложения"""
         pass
+
+    @abstractmethod
+    def create_children_windows(self):
+        """Создание дочерних фреймов основного окна приложения"""
+        ...
 
 
 class AppTagHelper:
-    TAG: LiteralString = "tag"
-    TAG_CONNECTOR: LiteralString = "_"
-    WINDOW_ELEMENTS_TAG: dict[str, dict[str, str]] = {"OTHER": {"test": "OTHER_test_tag"}}
+    TAG: Final[str] = "tag"
+    TAG_CONNECTOR: Final[str] = "_"
+    _window_elements_tag: dict[str, dict[str, str]] = {"OTHER": {"test": "OTHER_test_tag"}}
 
     @classmethod
     def set_new_el_tag(cls, class_tag_name: str | None, new_tag_name: str | MyIterType) -> str:
@@ -89,10 +93,10 @@ class AppTagHelper:
         if class_tag_name is None:
             class_tag_name = "OTHER"
 
-        if class_tag_name not in cls.WINDOW_ELEMENTS_TAG:
-            cls.WINDOW_ELEMENTS_TAG[class_tag_name] = {}
+        if class_tag_name not in cls._window_elements_tag:
+            cls._window_elements_tag[class_tag_name] = {}
 
-        if new_tag_name in cls.WINDOW_ELEMENTS_TAG[class_tag_name]:
+        if new_tag_name in cls._window_elements_tag[class_tag_name]:
             tag_name = cls.get_el_tag(class_tag_name, new_tag_name)
             exist_tag_type = dpg.get_item_type(tag_name)
             raise TagWindowError(
@@ -112,7 +116,7 @@ class AppTagHelper:
 
             new_tag = cls.TAG_CONNECTOR.join((f"{class_tag_name}", f"{new_tag_name}", cls.TAG))
 
-        cls.WINDOW_ELEMENTS_TAG[class_tag_name][new_tag_name] = new_tag
+        cls._window_elements_tag[class_tag_name][new_tag_name] = new_tag
 
         return cls.get_el_tag(tag_target=class_tag_name, tag_name=new_tag_name)
 
@@ -134,7 +138,7 @@ class AppTagHelper:
             else:
                 tag_name = (tag_name,)
         try:
-            tag = cls.WINDOW_ELEMENTS_TAG[tag_target][
+            tag = cls._window_elements_tag[tag_target][
                 cls.TAG_CONNECTOR.join(tag_name)]
             return tag
         except KeyError:
@@ -152,20 +156,20 @@ class AppTagHelper:
         :param tag_name: Имя тега
         :param del_obj_by_tag: Удалить ли объект вместе с тегом
         """
-        if tag_target not in cls.WINDOW_ELEMENTS_TAG:
+        if tag_target not in cls._window_elements_tag:
             raise TagWindowError(
                 msg="Нет тегов у данного класса!",
-                targets=[str(key) for key in cls.WINDOW_ELEMENTS_TAG],
+                targets=[str(key) for key in cls._window_elements_tag],
                 pre_decision=f"Создать первый тег для класса через {cls.set_new_el_tag.__name__}"
             )
-        if tag_name not in cls.WINDOW_ELEMENTS_TAG[tag_target]:
+        if tag_name not in cls._window_elements_tag[tag_target]:
             raise TagWindowError(
                 msg="Данный тег не создан!",
                 targets=[f"{tag_name}"]
             )
 
         deleted_tag = cls.get_el_tag(tag_target, tag_name)
-        del cls.WINDOW_ELEMENTS_TAG[tag_target][tag_name]
+        del cls._window_elements_tag[tag_target][tag_name]
 
         if dpg.does_alias_exist(deleted_tag):
             if del_obj_by_tag and dpg.does_item_exist(deleted_tag):
@@ -183,13 +187,13 @@ class AppTagHelper:
         """
         all_tags = tuple()
 
-        for main_tag in cls.WINDOW_ELEMENTS_TAG:
-            for tag in cls.WINDOW_ELEMENTS_TAG[main_tag].values():
+        for main_tag in cls._window_elements_tag:
+            for tag in cls._window_elements_tag[main_tag].values():
                 all_tags += (tag,)
         return all_tags
 
 
-class BaseAppWindow(MainAppABC, AppTagHelper):
+class BaseAppWindow(AppWindowABC, AppTagHelper):
     """Базовый класс для создания UI приложения."""
     MAIN_CONTAINER_TAG_NAME: Final[str] = ("main", "content", "container")
     SIDEBAR_WIDTH = WCE.SIDE_BAR_WIDTH.value
@@ -223,4 +227,7 @@ class BaseAppWindow(MainAppABC, AppTagHelper):
             )
 
     def create_window(self):
+        ...
+
+    def create_children_windows(self):
         ...

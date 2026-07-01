@@ -21,17 +21,17 @@ from src.utils.position import get_element_pos, RectangularImageElement
 
 class ContentWindowThemesHandler(BaseAppThemeHandler):
     @staticmethod
-    def rounded_btn_theme() -> None:
+    def theme_rounded_btn() -> None:
         with dpg.theme_component(dpg.mvButton):
             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 15)
 
     @staticmethod
-    def error_text_input() -> None:
+    def theme_error_input_text() -> None:
         with dpg.theme_component(dpg.mvInputText):
             dpg.add_theme_color(dpg.mvThemeCol_Text, ColorsEnum.RED.value.to_tuple())
 
     @staticmethod
-    def opacity_win_theme_tag() -> None:
+    def theme_opacity_win() -> None:
         with dpg.theme_component(dpg.mvChildWindow):
             dpg.add_theme_color(
                 dpg.mvThemeCol_ChildBg,
@@ -41,7 +41,7 @@ class ContentWindowThemesHandler(BaseAppThemeHandler):
             dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 15, category=dpg.mvThemeCat_Core)
 
     @staticmethod
-    def clear_field_alert() -> None:
+    def theme_clear_field_alert() -> None:
         with dpg.theme_component(dpg.mvWindowAppItem):
             dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 1)
             dpg.add_theme_color(dpg.mvThemeCol_Border, [255, 165, 0, 255], category=dpg.mvThemeCat_Core)
@@ -243,7 +243,7 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
                     callback=lambda: self.close_clear_alert(alert_win, False),
                 )
 
-        self.set_theme(alert_win, self.clear_field_alert)
+        self.set_theme(alert_win, self.theme_clear_field_alert)
 
     def _create_file_dialog_window(self) -> DPGTag:
         """Создание модального окна для выбора файла"""
@@ -266,6 +266,77 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
         self.app.insert_item_resize_callback(callback_name=file_dialog_tag, new_callback=self.resize_file_dialog)
         return file_dialog_tag
 
+    def __create_media_fields(self) -> None:
+        """Создание полей для ввода данных медиа-файла"""
+        dpg.add_spacer(height=10)
+        dpg.add_text("Тип файла: ")
+        dpg.add_combo(
+            tag=self.set_new_el_tag(self.class_name, MediaTagFields.type),
+            items=(MediaTypeEnum.PHOTO, MediaTypeEnum.VIDIO, MediaTypeEnum.AUDIO),
+            default_value=MediaTypeEnum.PHOTO,
+        )
+
+        dpg.add_spacer(height=10)
+        dpg.add_text("Место действия: ")
+        dpg.add_input_text(tag=self.set_new_el_tag(self.class_name, MediaTagFields.location), hint="Москва")
+
+        dpg.add_spacer(height=10)
+        dpg.add_text("Описание: ")
+        dpg.add_input_text(
+            tag=self.set_new_el_tag(self.class_name, MediaTagFields.description),
+            hint="Моё просто описание файла.",
+            height=100,
+            multiline=True,
+            always_overwrite=True,
+        )
+
+        dpg.add_spacer(height=5)
+        self.set_theme(
+            dpg.add_child_window(
+                tag=self.set_new_el_tag(self.class_name, ("selected", "tags")),
+                height=80,
+                width=int(App.MIN_WIDTH // 1.5),
+                border=False,
+                horizontal_scrollbar=False,
+                show=False,
+            ),
+            self.theme_opacity_win
+        )
+
+        non_sel_tag = self.set_new_el_tag(self.class_name, ("available", "tags"))
+        dpg.add_text("Доступные теги: ")
+        self.set_theme(
+            dpg.add_child_window(
+                tag=non_sel_tag,
+                height=80,
+                width=int(App.MIN_WIDTH // 1.5),
+                border=False,
+                horizontal_scrollbar=False,
+                show=False,
+            ),
+            self.theme_opacity_win
+        )
+
+        with dpg.group(horizontal=True):
+            dpg.add_text("Добавление нового тега:")
+            with dpg.tooltip(
+                    dpg.add_input_text(
+                        tag=self.set_new_el_tag(self.class_name, "new_tag"),
+                        hint="Введите новый тег",
+                        callback=self.add_new_tag,
+                        no_spaces=True,
+                        on_enter=True,
+                        auto_select_all=True,
+                        always_overwrite=True,
+                        width=200,
+                    ),
+                    delay=.3,
+                    hide_on_activity=True
+            ):
+                dpg.add_text("Нажмите `Enter` для сохранения")
+
+        self.update_tag_selector()
+
     def update_tag_selector(self, new_tag: Tag | None = None) -> None:
         """Обновление списка доступных тегов медиа-файла
 
@@ -275,7 +346,7 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
             ContentWindow.user_tags.append(new_tag)
             ContentWindow.all_accepted_tags.append(new_tag)
         else:
-            ContentWindow.all_accepted_tags.extend([*TagService().get_weak_tags()])
+            ContentWindow.all_accepted_tags = [*TagService().get_weak_tags()]
         ContentWindow.active_tag_counter = len(ContentWindow.all_accepted_tags)
 
         for media_tag in ContentWindow.all_accepted_tags:
@@ -315,79 +386,8 @@ class ContentWindow(BaseAppWindow, ContentWindowEventHandler, ContentWindowTheme
             )
             dpg.configure_item(selected_tag, user_data=available_tag)
 
-            self.set_theme(selected_tag, self.rounded_btn_theme)
-            self.set_theme(available_tag, self.rounded_btn_theme)
-
-    def __create_media_fields(self) -> None:
-        """Создание полей для ввода данных медиа-файла"""
-        dpg.add_spacer(height=10)
-        dpg.add_text("Тип файла: ")
-        dpg.add_combo(
-            tag=self.set_new_el_tag(self.class_name, MediaTagFields.type),
-            items=(MediaTypeEnum.PHOTO, MediaTypeEnum.VIDIO, MediaTypeEnum.AUDIO),
-            default_value=MediaTypeEnum.PHOTO,
-        )
-
-        dpg.add_spacer(height=10)
-        dpg.add_text("Место действия: ")
-        dpg.add_input_text(tag=self.set_new_el_tag(self.class_name, MediaTagFields.location), hint="Москва")
-
-        dpg.add_spacer(height=10)
-        dpg.add_text("Описание: ")
-        dpg.add_input_text(
-            tag=self.set_new_el_tag(self.class_name, MediaTagFields.description),
-            hint="Моё просто описание файла.",
-            height=100,
-            multiline=True,
-            always_overwrite=True,
-        )
-
-        dpg.add_spacer(height=5)
-        self.set_theme(
-            dpg.add_child_window(
-                tag=self.set_new_el_tag(self.class_name, ("selected", "tags")),
-                height=80,
-                width=int(App.MIN_WIDTH // 1.5),
-                border=False,
-                horizontal_scrollbar=False,
-                show=False,
-            ),
-            self.opacity_win_theme_tag
-        )
-
-        non_sel_tag = self.set_new_el_tag(self.class_name, ("available", "tags"))
-        dpg.add_text("Доступные теги: ")
-        self.set_theme(
-            dpg.add_child_window(
-                tag=non_sel_tag,
-                height=80,
-                width=int(App.MIN_WIDTH // 1.5),
-                border=False,
-                horizontal_scrollbar=False,
-                show=False,
-            ),
-            self.opacity_win_theme_tag
-        )
-
-        with dpg.group(horizontal=True):
-            dpg.add_text("Добавление нового тега:")
-            with dpg.tooltip(
-                    dpg.add_input_text(
-                        tag=self.set_new_el_tag(self.class_name, "new_tag"),
-                        hint="Введите новый тег",
-                        callback=self.add_new_tag,
-                        no_spaces=True,
-                        on_enter=True,
-                        auto_select_all=True,
-                        always_overwrite=True,
-                        width=200,
-                    ),
-                    delay=.3,
-                    hide_on_activity=True
-            ):
-                dpg.add_text("Нажмите `Enter` для сохранения")
-
-        self.update_tag_selector()
+            self.set_theme(selected_tag, self.theme_rounded_btn)
+            self.set_theme(available_tag, self.theme_rounded_btn)
 
     def clear_input_fields(self) -> None:
         """Полная очистка при выходе из формы создания"""
